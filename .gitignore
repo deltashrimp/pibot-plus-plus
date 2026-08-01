@@ -1,0 +1,21 @@
+# Secrets
+.env
+.env.*
+
+# C/C++ build artifacts
+build/
+cmake-build-*/
+*.o
+*.a
+*.so
+*.so.*
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
