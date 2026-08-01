@@ -40,6 +40,9 @@ services:
       redis:
         condition: service_healthy
     environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
       CORE_API_KEY: ${CORE_API_KEY}
       POSTGRES_HOST: ${POSTGRES_HOST}
       POSTGRES_PORT: 5432
@@ -47,9 +50,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       CORE_PORT: ${CORE_PORT}
-    # Exposed to the host only for debugging; remove to keep fully internal
-    ports:
-      - "${CORE_PORT}:${CORE_PORT}"
     networks:
       - pibot-net
     healthcheck:
@@ -107,12 +107,29 @@ services:
       retries: 5
     restart: unless-stopped
 
+  auto-mod:
+    build: ./auto-mod
+    container_name: pibot-auto-mod
+    environment:
+      CORE_API_KEY: ${CORE_API_KEY}
+      CORE_HOST: core
+      CORE_PORT: ${CORE_PORT}
+      AUTO_MOD_PORT: ${AUTO_MOD_PORT}
+    networks:
+      - pibot-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:${AUTO_MOD_PORT}/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 networks:
   pibot-net:
     name: pibot-net
-    # Internal network: blocks all external access; containers reach each other
-    # by service name only.
-    internal: true
+    # Containers reach each other by service name; the network is NOT internal
+    # because core needs outbound access to the Telegram API and ai to LLM APIs.
+    # No service publishes ports, so nothing is exposed to the host.
 
 volumes:
   pgdata:
