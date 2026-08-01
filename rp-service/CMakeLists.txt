@@ -9,7 +9,15 @@ find_package(OpenSSL REQUIRED)
 find_package(PostgreSQL REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(oatpp REQUIRED)
-find_package(oatpp-pqsql REQUIRED)
+# Upstream renamed the module to oatpp-postgresql (>= 1.3.0); older
+# distributions (e.g. Arch AUR) still install it as oatpp-pqsql.
+find_package(oatpp-postgresql QUIET)
+if(NOT oatpp-postgresql_FOUND)
+    find_package(oatpp-pqsql REQUIRED)
+    set(OATPP_PQSQL_LIBRARIES oatpp-pqsql)
+else()
+    set(OATPP_PQSQL_LIBRARIES oatpp::oatpp-postgresql)
+endif()
 find_package(hiredis REQUIRED)
 find_package(redis++ REQUIRED)
 
@@ -31,7 +39,7 @@ target_link_libraries(pibot-rp PRIVATE
     PostgreSQL::PostgreSQL
     spdlog::spdlog
     oatpp
-    oatpp-pqsql
+    ${OATPP_PQSQL_LIBRARIES}
     hiredis
     redis++
 )
