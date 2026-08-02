@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-instructor
-openai
-python-json-logger
-httpx
-pydantic

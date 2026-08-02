@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Structured JSON logging to stdout.
+         Field names (ts/level/logger/message) match the other PiBot services
+         (core, auto-mod). MDC keys user_id/chat_id/duration_ms are emitted
+         when present. -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <fieldNames>
+                <timestamp>ts</timestamp>
+                <level>level</level>
+                <logger>logger</logger>
+                <message>message</message>
+                <thread>[ignore]</thread>
+                <levelValue>[ignore]</levelValue>
+                <version>[ignore]</version>
+            </fieldNames>
+            <includeMdcKeyName>user_id</includeMdcKeyName>
+            <includeMdcKeyName>chat_id</includeMdcKeyName>
+            <includeMdcKeyName>duration_ms</includeMdcKeyName>
+        </encoder>
+    </appender>
+
+    <root level="${LOG_LEVEL:-INFO}">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

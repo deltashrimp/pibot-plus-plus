@@ -93,6 +93,7 @@ services:
         condition: service_healthy
     environment:
       AI_PORT: ${AI_PORT}
+      AI_API_KEY: ${AI_API_KEY}
       GROQ_API_KEY: ${GROQ_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       CORE_API_KEY: ${CORE_API_KEY}
@@ -101,7 +102,7 @@ services:
     networks:
       - pibot-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${AI_PORT}/health')"]
+      test: ["CMD-SHELL", "curl -f http://localhost:${AI_PORT}/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

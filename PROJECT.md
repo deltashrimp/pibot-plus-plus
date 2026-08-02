@@ -11,7 +11,7 @@ Technical documentation for the PiBot microservices system: architecture, the
 | ----------- | -------- | ---------------------------------------------------- | --------------- |
 | `core`      | C++17    | TDLib, oatpp, libpqxx, spdlog                        | 8080            |
 | `rp-service`| C++17    | oatpp, oatpp-pqsql, libpqxx, redis-plus-plus, spdlog | 8081            |
-| `ai-service`| Python   | FastAPI, instructor, openai, python-json-logger, httpx, pydantic | 8082 |
+| `ai-service`| Java 17   | Spring Boot 3.2 (Maven), RestClient, logstash-logback | 8082 |
 | `auto-mod`  | C++17    | oatpp (skeleton only)                                 | 8083            |
 | `postgres`  | -        | PostgreSQL 15                                        | -               |
 | `redis`     | -        | Redis 7                                              | -               |
@@ -125,7 +125,7 @@ greeting, all other replies are sent with markdown rendering.
 ```
 core/            C++ core service (TDLib bot engine, REST API, DB manager)
 rp-service/      C++ reporting service (caching via Redis, config client)
-ai-service/      Python AI service (FastAPI, LLM client, tools, telemetry)
+ai-service/      Java 17 AI service (Spring Boot skeleton: REST API, structured logging)
 auto-mod/        C++ auto-moderation skeleton (returns 200)
 scripts/         Build helpers
 docker-compose.yml

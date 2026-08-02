@@ -398,7 +398,7 @@ void ModerationCommands::executeRank(const CommandContext& context) {
         return;
     }
     if (newRank != 2 && newRank != 3 && newRank != 4) {
-        reply(context, "Invalid rank. Use 2, 3 or 4.");
+        reply(context, "Неверный ранг. Используйте 2, 3 или 4.");
         return;
     }
 

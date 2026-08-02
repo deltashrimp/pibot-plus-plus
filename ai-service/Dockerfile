@@ -1,22 +1,30 @@
-# Syntax=docker/dockerfile:1
-
-# ---- ai-service: FastAPI based AI/LLM service ----
-FROM python:3.11-slim
+# ---- Stage 1: builder ----
+# Compiles the Spring Boot application with Maven.
+FROM maven:3.9-eclipse-temurin-17 AS builder
 
 WORKDIR /app
+COPY pom.xml .
+# Resolve dependencies into the Maven cache first so source changes do not
+# re-download the world.
+RUN mvn -B -q -DskipTests dependency:go-offline
 
-# Install Python dependencies first to leverage Docker layer caching
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY src ./src
+RUN mvn -B -q -DskipTests package
 
-# Copy application code
-COPY app/ ./app/
+# ---- Stage 2: runtime ----
+# Minimal JRE image; curl is needed by the Docker healthcheck.
+FROM eclipse-temurin:17-jre AS runtime
 
-# AI service configuration
-ENV AI_PORT=8082
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /app/target/ai-service.jar /app/ai-service.jar
+
+ENV AI_PORT=8082 \
+    LOG_LEVEL=info
 
 EXPOSE 8082
 
-HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')"
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8082"]
+ENTRYPOINT ["java", "-jar", "/app/ai-service.jar"]
