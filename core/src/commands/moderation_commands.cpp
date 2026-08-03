@@ -4,7 +4,9 @@
 #include <cctype>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
+#include <unordered_map>
 
 #include "database/db_manager.h"
 #include "logging/logger.h"
@@ -12,6 +14,9 @@
 #include "utils/helpers.h"
 
 namespace {
+
+// At most one command per user per second.
+constexpr int64_t kCommandCooldownSeconds = 1;
 
 template <class To, class From>
 td::td_api::object_ptr<To> downcast(td::td_api::object_ptr<From>& obj) {
@@ -36,14 +41,30 @@ std::string rankLabel(int rank) {
 }  // namespace
 
 ModerationCommands::ModerationCommands(std::shared_ptr<TdlibClient> tdlib,
-                                       std::shared_ptr<DbManager> db)
-    : tdlib_(std::move(tdlib)), db_(std::move(db)) {}
+                                       std::shared_ptr<DbManager> db,
+                                       std::shared_ptr<rp::RpClient> rpClient)
+    : tdlib_(std::move(tdlib)),
+      db_(std::move(db)),
+      rpClient_(std::move(rpClient)) {}
 
 bool ModerationCommands::canHandle(const std::string& command) const {
     return command == "start" || command == "mute" || command == "unmute" ||
            command == "kick" || command == "ban" || command == "unban" ||
            command == "globalban" || command == "globalunban" || command == "rank" ||
-           command == "ranks";
+           command == "ranks" || command == "rpadd" || command == "rpremove" ||
+           command == "rpedit" || command == "rplist";
+}
+
+bool ModerationCommands::allowCommand(int64_t senderId) {
+    std::lock_guard<std::mutex> lock(rateLimitMutex_);
+    const int64_t now = helpers::unixNow();
+    auto it = lastCommandAt_.find(senderId);
+    if (it != lastCommandAt_.end() &&
+        now - it->second < kCommandCooldownSeconds) {
+        return false;
+    }
+    lastCommandAt_[senderId] = now;
+    return true;
 }
 
 void ModerationCommands::handle(const CommandContext& context) {
@@ -67,6 +88,14 @@ void ModerationCommands::handle(const CommandContext& context) {
         executeRank(context);
     } else if (context.command == "ranks") {
         executeRanks(context);
+    } else if (context.command == "rpadd") {
+        executeRpAdd(context);
+    } else if (context.command == "rpremove") {
+        executeRpRemove(context);
+    } else if (context.command == "rpedit") {
+        executeRpEdit(context);
+    } else if (context.command == "rplist") {
+        executeRpList(context);
     }
 }
 
@@ -101,6 +130,8 @@ void ModerationCommands::handleMessage(td::td_api::object_ptr<td::td_api::messag
 
     auto parts = helpers::splitCommand(text);
     if (parts.empty() || parts[0].empty() || parts[0][0] != '/') {
+        matchRp(chatId, senderId, text, message->reply_in_chat_id_,
+                message->reply_to_message_id_, message->id_);
         return;
     }
 
@@ -110,6 +141,11 @@ void ModerationCommands::handleMessage(td::td_api::object_ptr<td::td_api::messag
         command = command.substr(0, atPos);
     }
     if (!canHandle(command)) {
+        return;
+    }
+
+    if (!allowCommand(senderId)) {
+        Logger::info("command dropped: rate limit exceeded", senderId, chatId, command);
         return;
     }
 
@@ -123,6 +159,15 @@ void ModerationCommands::handleMessage(td::td_api::object_ptr<td::td_api::messag
     for (size_t i = 1; i < parts.size(); ++i) {
         context.args.push_back(parts[i]);
     }
+    size_t tokenStart = 0;
+    while (tokenStart < text.size() && std::isspace(static_cast<unsigned char>(text[tokenStart]))) {
+        ++tokenStart;
+    }
+    size_t i = tokenStart + parts[0].size();
+    while (i < text.size() && std::isspace(static_cast<unsigned char>(text[i]))) {
+        ++i;
+    }
+    context.raw_args = text.substr(i);
 
     Logger::info("command received", senderId, chatId, command);
     handle(context);
@@ -509,6 +554,193 @@ void ModerationCommands::executeRanks(const CommandContext& context) {
                 [this, context](const std::string& err) { reply(context, err); });
 }
 
+void ModerationCommands::matchRp(int64_t chatId, int64_t senderId, const std::string& text,
+                                 int64_t replyChatId, int64_t replyMessageId, int64_t messageId) {
+    if (!rpClient_ || !rpClient_->enabled()) {
+        return;
+    }
+    if (text.empty()) {
+        return;
+    }
+
+    auto parts = helpers::splitCommand(text);
+    std::string targetToken = parts.size() > 1 ? parts[1] : "";
+
+    // "обнять @username": resolve the mention and use it as the action target.
+    if (!targetToken.empty() && targetToken[0] == '@') {
+        std::string username = targetToken.substr(1);
+        tdlib_->resolveUsername(
+            username,
+            [this, chatId, senderId, text, messageId](int64_t userId) {
+                sendRpMatch(chatId, senderId, text, userId, messageId);
+            },
+            [this, chatId, senderId, text, replyChatId, replyMessageId, messageId](
+                const std::string&) {
+                resolveRpReplyTarget(chatId, senderId, text, replyChatId, replyMessageId,
+                                     messageId);
+            });
+        return;
+    }
+
+    // "обнять 123456": numeric user id as the action target.
+    if (!targetToken.empty()) {
+        try {
+            size_t pos = 0;
+            long long id = std::stoll(targetToken, &pos);
+            if (pos == targetToken.size()) {
+                sendRpMatch(chatId, senderId, text, id, messageId);
+                return;
+            }
+        } catch (const std::exception&) {
+        }
+    }
+
+    resolveRpReplyTarget(chatId, senderId, text, replyChatId, replyMessageId, messageId);
+}
+
+void ModerationCommands::resolveRpReplyTarget(int64_t chatId, int64_t senderId,
+                                              const std::string& text, int64_t replyChatId,
+                                              int64_t replyMessageId, int64_t messageId) {
+    if (replyMessageId > 0) {
+        int64_t replyChat = replyChatId != 0 ? replyChatId : chatId;
+        tdlib_->getMessage(
+            replyChat, replyMessageId,
+            [this, chatId, senderId, text, messageId](int64_t replyToUserId) {
+                sendRpMatch(chatId, senderId, text, replyToUserId, messageId);
+            },
+            [this, chatId, senderId, text, messageId](const std::string&) {
+                sendRpMatch(chatId, senderId, text, 0, messageId);
+            });
+        return;
+    }
+    sendRpMatch(chatId, senderId, text, 0, messageId);
+}
+
+void ModerationCommands::sendRpMatch(int64_t chatId, int64_t senderId, const std::string& text,
+                                     int64_t replyToUserId, int64_t messageId) {
+    auto resolveTargetAndDispatch = [this, chatId, senderId, text, replyToUserId, messageId](
+                                        const std::string& mention1) {
+        if (replyToUserId <= 0) {
+            dispatchRpMatch(chatId, senderId, text, 0, messageId, mention1, "");
+            return;
+        }
+        tdlib_->getUserDisplayName(
+            replyToUserId,
+            [this, chatId, senderId, text, replyToUserId, messageId, mention1](
+                const std::string& targetName) {
+                dispatchRpMatch(chatId, senderId, text, replyToUserId, messageId, mention1,
+                                helpers::mentionUser(replyToUserId, targetName));
+            },
+            [this, chatId, senderId, text, replyToUserId, messageId, mention1](
+                const std::string&) {
+                dispatchRpMatch(chatId, senderId, text, replyToUserId, messageId, mention1,
+                                helpers::mentionUser(replyToUserId));
+            });
+    };
+
+    tdlib_->getUserDisplayName(
+        senderId,
+        [this, resolveTargetAndDispatch, senderId](const std::string& senderName) {
+            resolveTargetAndDispatch(helpers::mentionUser(senderId, senderName));
+        },
+        [this, resolveTargetAndDispatch, senderId](const std::string&) {
+            resolveTargetAndDispatch(helpers::mentionUser(senderId));
+        });
+}
+
+void ModerationCommands::dispatchRpMatch(int64_t chatId, int64_t senderId,
+                                         const std::string& text, int64_t replyToUserId,
+                                         int64_t messageId, const std::string& mention1,
+                                         const std::string& mention2) {
+    auto result = rpClient_->match(chatId, senderId, text, replyToUserId, mention1, mention2);
+    if (result.matched && !result.response.empty()) {
+        tdlib_->sendText(chatId, result.response, messageId);
+        Logger::info("rp matched", senderId, chatId, result.trigger);
+    }
+}
+
+void ModerationCommands::executeRpAdd(const CommandContext& context) {
+    requireRank(
+        context, 1,
+        [this, context] {
+            if (context.args.size() < 2 || context.raw_args.empty()) {
+                reply(context, "Использование: /rpadd <триггер> <ответ>");
+                return;
+            }
+            size_t i = context.args[0].size();
+            while (i < context.raw_args.size() &&
+                   std::isspace(static_cast<unsigned char>(context.raw_args[i]))) {
+                ++i;
+            }
+            std::string response = context.raw_args.substr(i);
+            auto result = rpClient_->addCommand(context.chat_id, context.args[0], response);
+            reply(context, result.message);
+            Logger::info(result.ok ? "rp command added" : "rp add failed", context.sender_id,
+                         context.chat_id, "rpadd");
+        },
+        [this, context](const std::string& err) { reply(context, err); });
+}
+
+void ModerationCommands::executeRpRemove(const CommandContext& context) {
+    requireRank(
+        context, 1,
+        [this, context] {
+            if (context.args.empty()) {
+                reply(context, "Использование: /rpremove <триггер>");
+                return;
+            }
+            auto result = rpClient_->removeCommand(context.chat_id, context.args[0]);
+            reply(context, result.message);
+            Logger::info(result.ok ? "rp command removed" : "rp remove failed", context.sender_id,
+                         context.chat_id, "rpremove");
+        },
+        [this, context](const std::string& err) { reply(context, err); });
+}
+
+void ModerationCommands::executeRpEdit(const CommandContext& context) {
+    requireRank(
+        context, 1,
+        [this, context] {
+            if (context.args.size() < 2 || context.raw_args.empty()) {
+                reply(context, "Использование: /rpedit <триггер> <новый ответ>");
+                return;
+            }
+            size_t i = context.args[0].size();
+            while (i < context.raw_args.size() &&
+                   std::isspace(static_cast<unsigned char>(context.raw_args[i]))) {
+                ++i;
+            }
+            std::string response = context.raw_args.substr(i);
+            auto result = rpClient_->editCommand(context.chat_id, context.args[0], response);
+            reply(context, result.message);
+            Logger::info(result.ok ? "rp command edited" : "rp edit failed", context.sender_id,
+                         context.chat_id, "rpedit");
+        },
+        [this, context](const std::string& err) { reply(context, err); });
+}
+
+void ModerationCommands::executeRpList(const CommandContext& context) {
+    requireRank(
+        context, 1,
+        [this, context] {
+            auto commands = rpClient_->listCommands(context.chat_id);
+            if (commands.empty()) {
+                reply(context, "В этом чате нет RP-команд.");
+                return;
+            }
+            std::string text = "RP-команды в этом чате:\n";
+            for (const auto& entry : commands) {
+                std::string response = entry.second;
+                if (response.size() > 50) {
+                    response = response.substr(0, 50) + "...";
+                }
+                text += entry.first + " - " + response + "\n";
+            }
+            tdlib_->sendTextPlain(context.chat_id, text, context.message_id);
+        },
+        [this, context](const std::string& err) { reply(context, err); });
+}
+
 void ModerationCommands::executeStart(const CommandContext& context) {
     const std::string text =
         "Привет! Я модератор-бот PiBot.\n\n"
@@ -518,10 +750,16 @@ void ModerationCommands::executeStart(const CommandContext& context) {
         "/kick <цель> - исключить пользователя\n"
         "/ban <цель> - заблокировать пользователя\n"
         "/unban <цель> - разблокировать пользователя\n"
-        "/globalban <цель> - добавить в глобальный бан\n"
-        "/globalunban <цель> - удалить из глобального бана\n"
-        "/rank <2|3|4> <цель> - установить ранг\n"
-        "/ranks - список рангов в чате\n\n"
+        "/rank <2 / 3 / 4> <цель> - установить ранг\n"
+        "/ranks - список рангов в чате\n"
+        "/rpadd <триггер> <ответ> - добавить RP-команду\n"
+        "/rpremove <триггер> - удалить RP-команду\n"
+        "/rpedit <триггер> <ответ> - изменить RP-команду\n"
+        "/rplist - список RP-команд в чате\n\n"
+        "RP-команды срабатывают обычным сообщением, например: обнять @user\n"
+        "Цель RP — @username, числовой id или ответ на сообщение.\n"
+        "В ответах RP-команд можно использовать {mention}, {mention1} (автор) "
+        "и {mention2} (цель действия).\n\n"
         "<цель> — @username, числовой id или ответ на сообщение.";
     tdlib_->sendTextPlain(context.chat_id, text, context.message_id);
 }

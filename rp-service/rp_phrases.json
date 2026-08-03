@@ -1,0 +1,12 @@
+{
+  "обнять": "{mention1} обнял {mention2}",
+  "погладить": "{mention1} погладил {mention2}",
+  "ударить": "{mention1} ударил {mention2}",
+  "укусить": "{mention1} укусил {mention2}",
+  "поцеловать": "{mention1} поцеловал {mention2}",
+  "утешить": "{mention1} утешил {mention2}",
+  "похвалить": "{mention1} похвалил {mention2}",
+  "подмигнуть": "{mention1} подмигнул {mention2}",
+  "обнюхать": "{mention1} обнюхал {mention2}",
+  "щекотать": "{mention1} щекочет {mention2}"
+}

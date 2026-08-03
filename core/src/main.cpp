@@ -14,6 +14,7 @@
 #include "commands/moderation_commands.h"
 #include "database/db_manager.h"
 #include "logging/logger.h"
+#include "rp/rp_client.h"
 #include "tdlib/tdlib_client.h"
 #include "utils/helpers.h"
 
@@ -72,7 +73,9 @@ int main(int argc, char* argv[]) {
 
     auto tdlib = std::make_shared<TdlibClient>();
     g_tdlib = tdlib;
-    auto commands = std::make_shared<ModerationCommands>(tdlib, db);
+    auto rpClient = std::make_shared<rp::RpClient>(
+        envOr("RP_SERVICE_URL", "http://rp:8081"), envOr("RP_API_KEY"));
+    auto commands = std::make_shared<ModerationCommands>(tdlib, db, rpClient);
     tdlib->setMessageHandler(
         [commands](td::td_api::object_ptr<td::td_api::message> message) {
             commands->handleMessage(std::move(message));

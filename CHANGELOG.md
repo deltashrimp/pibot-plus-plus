@@ -1,3 +1,10 @@
+# **V-1.2 Roleplay**
+*03.08.2026*
+
+RP module is ready. AI module is not included in compose build (commented out).
+
+---
+
 # **V-1.1 Automod**
 *02.08.2026*
 

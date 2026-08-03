@@ -25,8 +25,9 @@ struct Action {
 // Implements two independent checks, in order:
 //   1. Keyword filter  – hard-coded forbidden phrases (case-insensitive
 //      substring match). A hit yields MutePermanent + delete_message.
-//   2. Anti-spam       – per (chat, user) message counts within a 1-second
-//      sliding window. Crossing 5 messages yields MuteTemporary(60s).
+//   2. Anti-spam       – per (chat, user) message counts within a 3-second
+//      sliding window. Sustained sending above 3 messages/second for 3 seconds
+//      (more than 9 messages in the window) yields MuteTemporary(60s).
 //
 // All state lives in memory; nothing is persisted across restarts.
 class AutoModerator {

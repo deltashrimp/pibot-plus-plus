@@ -12,6 +12,7 @@ struct CommandContext {
     int64_t reply_message_id = 0;
     std::string command;
     std::vector<std::string> args;
+    std::string raw_args;
 };
 
 class CommandHandler {

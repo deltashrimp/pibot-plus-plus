@@ -20,6 +20,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: pibot-redis
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
     networks:
@@ -50,6 +51,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       CORE_PORT: ${CORE_PORT}
+      RP_SERVICE_URL: ${RP_SERVICE_URL}
+      RP_API_KEY: ${RP_API_KEY}
     networks:
       - pibot-net
     healthcheck:
@@ -63,19 +66,14 @@ services:
     build: ./rp-service
     container_name: pibot-rp
     depends_on:
-      core:
-        condition: service_healthy
       redis:
         condition: service_healthy
     environment:
-      CORE_API_KEY: ${CORE_API_KEY}
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
       REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: 6379
       RP_PORT: ${RP_PORT}
+      RP_API_KEY: ${RP_API_KEY}
+      RP_PHRASES_FILE: /app/rp_phrases.json
     networks:
       - pibot-net
     healthcheck:
@@ -85,28 +83,28 @@ services:
       retries: 5
     restart: unless-stopped
 
-  ai:
-    build: ./ai-service
-    container_name: pibot-ai
-    depends_on:
-      core:
-        condition: service_healthy
-    environment:
-      AI_PORT: ${AI_PORT}
-      AI_API_KEY: ${AI_API_KEY}
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      CORE_API_KEY: ${CORE_API_KEY}
-      CORE_HOST: core
-      CORE_PORT: ${CORE_PORT}
-    networks:
-      - pibot-net
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:${AI_PORT}/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+  # ai:
+  #   build: ./ai-service
+  #   container_name: pibot-ai
+  #   depends_on:
+  #     core:
+  #       condition: service_healthy
+  #   environment:
+  #     AI_PORT: ${AI_PORT}
+  #     AI_API_KEY: ${AI_API_KEY}
+  #     GROQ_API_KEY: ${GROQ_API_KEY}
+  #     OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+  #     CORE_API_KEY: ${CORE_API_KEY}
+  #     CORE_HOST: core
+  #     CORE_PORT: ${CORE_PORT}
+  #   networks:
+  #     - pibot-net
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:${AI_PORT}/health || exit 1"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
 
   auto-mod:
     build: ./auto-mod

@@ -68,6 +68,19 @@ std::string mentionUser(int64_t userId) {
     return "[user " + std::to_string(userId) + "](tg://user?id=" + std::to_string(userId) + ")";
 }
 
+std::string mentionUser(int64_t userId, const std::string& name) {
+    std::string escaped;
+    escaped.reserve(name.size());
+    for (char c : name) {
+        if (c == '\\' || c == '`' || c == '*' || c == '_' || c == '{' || c == '}' ||
+            c == '[' || c == ']' || c == '(' || c == ')' || c == '#') {
+            escaped += '\\';
+        }
+        escaped += c;
+    }
+    return "[" + escaped + "](tg://user?id=" + std::to_string(userId) + ")";
+}
+
 spdlog::level::level_enum parseLogLevel(const std::string& level) {
     if (level == "debug") return spdlog::level::debug;
     if (level == "warn" || level == "warning") return spdlog::level::warn;

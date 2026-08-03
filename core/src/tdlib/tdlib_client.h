@@ -31,6 +31,9 @@ public:
     void resolveUsername(const std::string& username,
                          std::function<void(int64_t userId)> onResult,
                          std::function<void(const std::string&)> onError = nullptr);
+    void getUserDisplayName(int64_t userId,
+                            std::function<void(const std::string& displayName)> onResult,
+                            std::function<void(const std::string&)> onError = nullptr);
     void getMessage(int64_t chatId, int64_t messageId,
                     std::function<void(int64_t senderUserId)> onResult,
                     std::function<void(const std::string&)> onError = nullptr);

@@ -270,3 +270,4 @@ gradle-app.setting
 *.hprof
 
 .dev 
+internal/

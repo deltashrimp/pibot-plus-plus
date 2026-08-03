@@ -3,18 +3,22 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <unordered_map>
 
 #include <td/telegram/td_api.h>
 #include <td/telegram/td_api.hpp>
 
 #include "commands/command_handler.h"
+#include "rp/rp_client.h"
 
 class TdlibClient;
 class DbManager;
 
 class ModerationCommands : public CommandHandler {
 public:
-    ModerationCommands(std::shared_ptr<TdlibClient> tdlib, std::shared_ptr<DbManager> db);
+    ModerationCommands(std::shared_ptr<TdlibClient> tdlib, std::shared_ptr<DbManager> db,
+                       std::shared_ptr<rp::RpClient> rpClient);
 
     bool canHandle(const std::string& command) const override;
     void handle(const CommandContext& context) override;
@@ -22,6 +26,10 @@ public:
     void handleMessage(td::td_api::object_ptr<td::td_api::message> message);
 
 private:
+    // Returns true if the user may run a command now; enforces a cooldown of
+    // one command per user per second.
+    bool allowCommand(int64_t senderId);
+
     void executeMute(const CommandContext& context);
     void executeUnmute(const CommandContext& context);
     void executeKick(const CommandContext& context);
@@ -32,6 +40,22 @@ private:
     void executeRank(const CommandContext& context);
     void executeRanks(const CommandContext& context);
     void executeStart(const CommandContext& context);
+    void executeRpAdd(const CommandContext& context);
+    void executeRpRemove(const CommandContext& context);
+    void executeRpEdit(const CommandContext& context);
+    void executeRpList(const CommandContext& context);
+
+    // Forwards a non-command message to the RP service and sends the matched
+    // response. No-op when the RP service is not configured.
+    void matchRp(int64_t chatId, int64_t senderId, const std::string& text,
+                 int64_t replyChatId, int64_t replyMessageId, int64_t messageId);
+    void sendRpMatch(int64_t chatId, int64_t senderId, const std::string& text,
+                     int64_t replyToUserId, int64_t messageId);
+    void dispatchRpMatch(int64_t chatId, int64_t senderId, const std::string& text,
+                         int64_t replyToUserId, int64_t messageId,
+                         const std::string& mention1, const std::string& mention2);
+    void resolveRpReplyTarget(int64_t chatId, int64_t senderId, const std::string& text,
+                              int64_t replyChatId, int64_t replyMessageId, int64_t messageId);
 
     void resolveTarget(const std::string& targetToken, const CommandContext& context,
                        std::function<void(int64_t userId)> onResolved,
@@ -48,6 +72,10 @@ private:
 
     std::shared_ptr<TdlibClient> tdlib_;
     std::shared_ptr<DbManager> db_;
+    std::shared_ptr<rp::RpClient> rpClient_;
+
+    std::mutex rateLimitMutex_;
+    std::unordered_map<int64_t, int64_t> lastCommandAt_;
 };
 
 #endif

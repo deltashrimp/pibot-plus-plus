@@ -146,6 +146,42 @@ void TdlibClient::resolveUsername(const std::string& username,
                 });
 }
 
+void TdlibClient::getUserDisplayName(int64_t userId,
+                                     std::function<void(const std::string&)> onResult,
+                                     std::function<void(const std::string&)> onError) {
+    auto req = td::td_api::make_object<td::td_api::getUser>();
+    req->user_id_ = userId;
+    sendRequest(
+        std::move(req),
+        [onResult = std::move(onResult), onError = std::move(onError), userId](
+            td::td_api::object_ptr<td::td_api::Object> result) {
+            if (result->get_id() == td::td_api::error::ID) {
+                auto err = downcast<td::td_api::error>(result);
+                if (onError) {
+                    onError(err->message_);
+                }
+                return;
+            }
+            auto user = downcast<td::td_api::user>(result);
+            std::string name;
+            if (!user->first_name_.empty()) {
+                name = user->first_name_.c_str();
+                if (!user->last_name_.empty()) {
+                    name += " ";
+                    name += user->last_name_.c_str();
+                }
+            } else if (!user->username_.empty()) {
+                name = "@";
+                name += user->username_.c_str();
+            } else {
+                name = "user " + std::to_string(userId);
+            }
+            if (onResult) {
+                onResult(name);
+            }
+        });
+}
+
 void TdlibClient::getMessage(int64_t chatId, int64_t messageId,
                              std::function<void(int64_t senderUserId)> onResult,
                              std::function<void(const std::string&)> onError) {

@@ -19,10 +19,11 @@ constexpr std::array<std::string_view, 11> kFilterPatterns = {
     "вы плывете",           "консультация бесплатно",
 };
 
-// Anti-spam tuning (matches the Python behaviour described in the task).
-constexpr double kSpamWindowSeconds = 1.0;   // 1-second sliding window
-constexpr size_t kSpamLimit = 5;             // >5 messages in window => spam
-constexpr int kMuteDurationSeconds = 60;     // temporary mute length
+// Anti-spam tuning: sustained sending above 3 messages/second for 3 seconds
+// (i.e. more than 9 messages in a 3-second sliding window) triggers a mute.
+constexpr double kSpamWindowSeconds = 3.0;  // 3-second sliding window
+constexpr size_t kSpamLimit = 9;            // 3 msg/s sustained for 3 s => spam
+constexpr int kMuteDurationSeconds = 60;    // temporary mute length
 
 // GC: when the total number of tracked timestamps exceeds this bound, sweep
 // the table and drop everything outside the spam window. Keeps memory bounded
@@ -195,8 +196,9 @@ Action AutoModerator::process_message(int64_t chat_id, int64_t user_id,
         auto& chat_tracker = spam_trackers_[chat_id];
         auto& user_tracker = chat_tracker[user_id];
 
-        // Keep only timestamps inside the 1-second sliding window (same rule
-        // as the Python version: t > now - window).
+        // Keep only timestamps inside the 3-second sliding window
+        // (t > now - window), so a muted rate is only detected once the
+        // flood has continued for 3 seconds.
         user_tracker.erase(
             std::remove_if(user_tracker.begin(), user_tracker.end(),
                            [cutoff](double t) { return t <= cutoff; }),
@@ -207,7 +209,7 @@ Action AutoModerator::process_message(int64_t chat_id, int64_t user_id,
         if (user_tracker.size() <= kSpamLimit) {
             action = {ActionType::Allow, 0, false};
         } else {
-            // More than 5 messages within the window: temporary mute.
+            // Sustained >3 messages/second for 3 seconds: temporary mute.
             prune_locked(timestamp);
             action = {ActionType::MuteTemporary, kMuteDurationSeconds, false};
         }
