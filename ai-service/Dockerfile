@@ -1,3 +1,8 @@
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
 FROM gradle:8-jdk21 AS build
 WORKDIR /app
 
