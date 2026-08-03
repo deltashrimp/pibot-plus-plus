@@ -16,7 +16,7 @@ RUN ./gradlew build
 
 FROM eclipse-temurin:21-jre-alpine
 
-COPY --from-build /app/build/libs/*.jar app.jar
+COPY --from=build /app/build/libs/*.jar app.jar
 
 ENV AI_PORT=8082 \
     LOG_LEVEL=info
