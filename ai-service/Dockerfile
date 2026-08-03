@@ -11,11 +11,6 @@ RUN ./gradlew build
 
 FROM eclipse-temurin:21-jre-alpine
 
-# RUN apt-get update && apt-get install -y --no-install-recommends \
-#        curl \
-#    && rm -rf /var/lib/apt/lists/*
-# ???? - ISThisALis
-
 COPY --from-build /app/build/libs/*.jar app.jar
 
 ENV AI_PORT=8082 \
