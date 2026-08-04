@@ -228,7 +228,7 @@ bool ModerationCommands::canModerateTarget(const CommandContext& context, int64_
 }
 
 void ModerationCommands::reply(const CommandContext& context, const std::string& text) {
-    tdlib_->sendText(context.chat_id, text, context.message_id);
+    tdlib_->sendText(context.chat_id, helpers::escapeMarkdown(text), context.message_id);
 }
 
 void ModerationCommands::setMemberStatus(const CommandContext& context, int64_t targetId,
@@ -494,7 +494,9 @@ void ModerationCommands::applyTelegramRank(const CommandContext& context, int64_
     setMemberStatus(context, targetId, std::move(status),
                     rank == 4 ? "Ранг установлен. Права администратора сняты."
                               : "Ранг установлен. Выданы права администратора.",
-                    "Ранг сохранён, но не удалось обновить статус администратора в Telegram.");
+                    "Ранг сохранён, но не удалось обновить статус администратора в Telegram. "
+                    "Проверьте, что бот добавлен как администратор группы с правом "
+                    "назначения администраторов (Add new admins).");
 }
 
 void ModerationCommands::executeRanks(const CommandContext& context) {

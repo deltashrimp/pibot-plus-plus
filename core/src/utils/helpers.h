@@ -13,6 +13,7 @@ namespace helpers {
 std::vector<std::string> splitCommand(const std::string& text);
 std::optional<std::chrono::seconds> parseDuration(const std::string& text);
 int64_t unixNow();
+std::string escapeMarkdown(const std::string& text);
 std::string mentionUser(int64_t userId);
 std::string mentionUser(int64_t userId, const std::string& name);
 spdlog::level::level_enum parseLogLevel(const std::string& level);

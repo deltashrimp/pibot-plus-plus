@@ -64,6 +64,40 @@ int64_t unixNow() {
                                     .count());
 }
 
+std::string escapeMarkdown(const std::string& text) {
+    std::string out;
+    out.reserve(text.size() + text.size() / 4);
+    for (char c : text) {
+        switch (c) {
+            case '\\':
+            case '_':
+            case '*':
+            case '[':
+            case ']':
+            case '(':
+            case ')':
+            case '~':
+            case '`':
+            case '>':
+            case '#':
+            case '+':
+            case '-':
+            case '=':
+            case '|':
+            case '{':
+            case '}':
+            case '.':
+            case '!':
+                out.push_back('\\');
+                break;
+            default:
+                break;
+        }
+        out.push_back(c);
+    }
+    return out;
+}
+
 std::string mentionUser(int64_t userId) {
     return "[user " + std::to_string(userId) + "](tg://user?id=" + std::to_string(userId) + ")";
 }
