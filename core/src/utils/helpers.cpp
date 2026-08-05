@@ -72,22 +72,8 @@ std::string escapeMarkdown(const std::string& text) {
             case '\\':
             case '_':
             case '*':
-            case '[':
-            case ']':
-            case '(':
-            case ')':
-            case '~':
             case '`':
-            case '>':
-            case '#':
-            case '+':
-            case '-':
-            case '=':
-            case '|':
-            case '{':
-            case '}':
-            case '.':
-            case '!':
+            case '[':
                 out.push_back('\\');
                 break;
             default:
@@ -106,8 +92,7 @@ std::string mentionUser(int64_t userId, const std::string& name) {
     std::string escaped;
     escaped.reserve(name.size());
     for (char c : name) {
-        if (c == '\\' || c == '`' || c == '*' || c == '_' || c == '{' || c == '}' ||
-            c == '[' || c == ']' || c == '(' || c == ')' || c == '#') {
+        if (c == '\\' || c == '`' || c == '*' || c == '_' || c == '[') {
             escaped += '\\';
         }
         escaped += c;

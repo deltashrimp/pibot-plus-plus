@@ -100,6 +100,12 @@ Stored in `chat_ranks` (`rank INT`): `0` developer (dev, global), `1` owner,
 in the `devs` table (seeded with user `934151958`) and rank as `0` in every chat
 regardless of `chat_ranks`.
 
+The bot never changes Telegram admin status; admin rights are managed manually
+by the group's admins. Before applying a rank, `/rank` reads the target's
+current Telegram admin status and enforces that it matches: ranks `2` and `3`
+can be given only to users who are already Telegram admins, and rank `4` only
+to users who are not (their admin rights must first be removed manually).
+
 ### Commands
 
 | Command      | Required rank | Action                                     |
@@ -111,7 +117,7 @@ regardless of `chat_ranks`.
 | `/unban < target >`      | owner (1) | Unban                                      |
 | `/globalban < target >`  | dev (0)  | Add to global ban list (all messages ignored) |
 | `/globalunban < target >`| dev (0)  | Remove from global ban list                |
-| `/rank < 2/ 3 / 4 > < target >` | owner/admin+ (1-2) | Set a user's rank; 3/2 grant Telegram admin, 4 removes it; rank 1 cannot be given (giving 2 requires owner) |
+| `/rank < 2/ 3 / 4 > < target >` | owner/admin+ (1-2) | Set a user's rank; 2/3 require the target to already be a Telegram admin, 4 requires them not to be; rank 1 cannot be given (giving 2 requires owner). The bot never changes Telegram admin status — that is done manually |
 | `/ranks`               | admin (3) | List all users with ranks 1-3              |
 | `/rpadd < trigger > < response >` | owner (1) | Add an RP command (first word = trigger)   |
 | `/rpremove < trigger >` | owner (1) | Remove an RP command                       |

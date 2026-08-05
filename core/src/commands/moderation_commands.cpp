@@ -458,45 +458,41 @@ void ModerationCommands::executeRank(const CommandContext& context) {
                                           reply(context, "Вы не можете изменить ранг этого пользователя.");
                                           return;
                                       }
-                                      db_->setChatRank(context.chat_id, targetId, newRank);
-                                      Logger::info("rank set", context.sender_id, context.chat_id,
-                                                   std::to_string(newRank) + " user=" +
-                                                       std::to_string(targetId));
-                                      applyTelegramRank(context, targetId, newRank);
+                                      tdlib_->getChatMember(
+                                          context.chat_id, targetId,
+                                          [this, context, newRank, targetId](bool isAdmin) {
+                                              if (newRank == 2 || newRank == 3) {
+                                                  if (!isAdmin) {
+                                                      reply(context,
+                                                            "Ранг 2/3 можно выдать только "
+                                                            "администратору Telegram. Сначала "
+                                                            "выдайте пользователю права "
+                                                            "администратора вручную.");
+                                                      return;
+                                                  }
+                                              } else if (isAdmin) {
+                                                  reply(context,
+                                                        "Цель всё ещё администратор Telegram. "
+                                                        "Сначала снимите её права администратора "
+                                                        "вручную, затем повторите /rank 4.");
+                                                  return;
+                                              }
+                                              db_->setChatRank(context.chat_id, targetId, newRank);
+                                              Logger::info("rank set", context.sender_id, context.chat_id,
+                                                           std::to_string(newRank) + " user=" +
+                                                               std::to_string(targetId));
+                                              reply(context, "Ранг установлен.");
+                                          },
+                                          [this, context](const std::string& err) {
+                                              reply(context,
+                                                    "Не удалось проверить статус администратора "
+                                                    "в Telegram (" +
+                                                        err + ").");
+                                          });
                                   },
                                   [this, context](const std::string& err) { reply(context, err); });
                 },
                 [this, context](const std::string& err) { reply(context, err); });
-}
-
-void ModerationCommands::applyTelegramRank(const CommandContext& context, int64_t targetId,
-                                           int rank) {
-    td::td_api::object_ptr<td::td_api::ChatMemberStatus> status;
-    if (rank == 2 || rank == 3) {
-        auto admin = td::td_api::make_object<td::td_api::chatMemberStatusAdministrator>();
-        admin->custom_title_ = "";
-        admin->can_be_edited_ = false;
-        admin->can_manage_chat_ = true;
-        admin->can_change_info_ = true;
-        admin->can_post_messages_ = true;
-        admin->can_edit_messages_ = true;
-        admin->can_delete_messages_ = true;
-        admin->can_invite_users_ = true;
-        admin->can_restrict_members_ = true;
-        admin->can_pin_messages_ = true;
-        admin->can_promote_members_ = false;
-        admin->can_manage_video_chats_ = false;
-        admin->is_anonymous_ = false;
-        status = std::move(admin);
-    } else {
-        status = td::td_api::make_object<td::td_api::chatMemberStatusMember>();
-    }
-    setMemberStatus(context, targetId, std::move(status),
-                    rank == 4 ? "Ранг установлен. Права администратора сняты."
-                              : "Ранг установлен. Выданы права администратора.",
-                    "Ранг сохранён, но не удалось обновить статус администратора в Telegram. "
-                    "Проверьте, что бот добавлен как администратор группы с правом "
-                    "назначения администраторов (Add new admins).");
 }
 
 void ModerationCommands::executeRanks(const CommandContext& context) {
@@ -752,7 +748,7 @@ void ModerationCommands::executeStart(const CommandContext& context) {
         "/kick <цель> - исключить пользователя\n"
         "/ban <цель> - заблокировать пользователя\n"
         "/unban <цель> - разблокировать пользователя\n"
-        "/rank <2 / 3 / 4> <цель> - установить ранг\n"
+        "/rank <2 / 3 / 4> <цель> - установить ранг (2/3 только для админов)\n"
         "/ranks - список рангов в чате\n"
         "/rpadd <триггер> <ответ> - добавить RP-команду\n"
         "/rpremove <триггер> - удалить RP-команду\n"

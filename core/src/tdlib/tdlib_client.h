@@ -37,6 +37,9 @@ public:
     void getMessage(int64_t chatId, int64_t messageId,
                     std::function<void(int64_t senderUserId)> onResult,
                     std::function<void(const std::string&)> onError = nullptr);
+    void getChatMember(int64_t chatId, int64_t userId,
+                       std::function<void(bool isAdmin)> onResult,
+                       std::function<void(const std::string&)> onError = nullptr);
     void setChatMemberStatus(int64_t chatId, int64_t userId,
                              td::td_api::object_ptr<td::td_api::ChatMemberStatus> status,
                              Callback callback = nullptr);

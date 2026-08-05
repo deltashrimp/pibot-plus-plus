@@ -65,7 +65,6 @@ private:
                      std::function<void(const std::string&)> onError);
     bool canModerateTarget(const CommandContext& context, int64_t targetId);
     void reply(const CommandContext& context, const std::string& text);
-    void applyTelegramRank(const CommandContext& context, int64_t targetId, int rank);
     void setMemberStatus(const CommandContext& context, int64_t targetId,
                          td::td_api::object_ptr<td::td_api::ChatMemberStatus> status,
                          const std::string& successMessage, const std::string& failureMessage);

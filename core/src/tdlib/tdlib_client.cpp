@@ -211,6 +211,36 @@ void TdlibClient::getMessage(int64_t chatId, int64_t messageId,
                 });
 }
 
+void TdlibClient::getChatMember(int64_t chatId, int64_t userId,
+                                std::function<void(bool isAdmin)> onResult,
+                                std::function<void(const std::string&)> onError) {
+    auto req = td::td_api::make_object<td::td_api::getChatMember>();
+    req->chat_id_ = chatId;
+    req->member_id_ = td::td_api::make_object<td::td_api::messageSenderUser>(userId);
+    sendRequest(std::move(req),
+                [onResult = std::move(onResult), onError = std::move(onError)](
+                    td::td_api::object_ptr<td::td_api::Object> result) {
+                    if (result->get_id() == td::td_api::error::ID) {
+                        auto err = downcast<td::td_api::error>(result);
+                        if (onError) {
+                            onError(err->message_);
+                        }
+                        return;
+                    }
+                    auto member = downcast<td::td_api::chatMember>(result);
+                    bool isAdmin = false;
+                    if (member->status_) {
+                        const int statusId = member->status_->get_id();
+                        isAdmin =
+                            statusId == td::td_api::chatMemberStatusAdministrator::ID ||
+                            statusId == td::td_api::chatMemberStatusCreator::ID;
+                    }
+                    if (onResult) {
+                        onResult(isAdmin);
+                    }
+                });
+}
+
 void TdlibClient::setChatMemberStatus(int64_t chatId, int64_t userId,
                                       td::td_api::object_ptr<td::td_api::ChatMemberStatus> status,
                                       Callback callback) {
