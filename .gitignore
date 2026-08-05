@@ -58,6 +58,12 @@ CMakeUserPresets.json
 # Log file
 *.log
 
+# bin classes 
+bin
+
+# Eclipse settings
+.settings
+
 # BlueJ files
 *.ctxt
 
@@ -243,6 +249,7 @@ pyrightconfig.json
 .ionide
 
 ### Gradle ###
+.factorypath
 .gradle
 **/build/
 !src/**/build/
@@ -270,4 +277,7 @@ gradle-app.setting
 *.hprof
 
 .dev 
+<<<<<<< Updated upstream
 internal/
+=======
+>>>>>>> Stashed changes
