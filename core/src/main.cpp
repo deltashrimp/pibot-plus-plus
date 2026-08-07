@@ -11,11 +11,13 @@
 #include <oatpp/web/server/HttpConnectionHandler.hpp>
 
 #include "api/api_controller.h"
+#include "ai/ai_client.h"
 #include "commands/moderation_commands.h"
 #include "database/db_manager.h"
 #include "logging/logger.h"
 #include "rp/rp_client.h"
 #include "tdlib/tdlib_client.h"
+#include "tools/tools_client.h"
 #include "utils/helpers.h"
 
 namespace {
@@ -75,7 +77,11 @@ int main(int argc, char* argv[]) {
     g_tdlib = tdlib;
     auto rpClient = std::make_shared<rp::RpClient>(
         envOr("RP_SERVICE_URL", "http://rp:8081"), envOr("RP_API_KEY"));
-    auto commands = std::make_shared<ModerationCommands>(tdlib, db, rpClient);
+    auto toolsClient = std::make_shared<tools::ToolsClient>(
+        envOr("TOOLS_SERVICE_URL", "http://tools:8084"), envOr("TOOLS_API_KEY"));
+    auto aiClient = std::make_shared<ai::AiClient>(
+        envOr("AI_SERVICE_URL", "http://ai:8082"), envOr("AI_API_KEY"));
+    auto commands = std::make_shared<ModerationCommands>(tdlib, db, rpClient, toolsClient, aiClient);
     tdlib->setMessageHandler(
         [commands](td::td_api::object_ptr<td::td_api::message> message) {
             commands->handleMessage(std::move(message));

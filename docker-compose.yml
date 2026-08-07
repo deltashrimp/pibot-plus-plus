@@ -53,6 +53,10 @@ services:
       CORE_PORT: ${CORE_PORT}
       RP_SERVICE_URL: ${RP_SERVICE_URL}
       RP_API_KEY: ${RP_API_KEY}
+      TOOLS_SERVICE_URL: ${TOOLS_SERVICE_URL}
+      TOOLS_API_KEY: ${TOOLS_API_KEY}
+      AI_SERVICE_URL: ${AI_SERVICE_URL}
+      AI_API_KEY: ${AI_API_KEY}
     networks:
       - pibot-net
     healthcheck:
@@ -123,6 +127,26 @@ services:
       retries: 5
     restart: unless-stopped
 
+  tools:
+    build: ./tools-service
+    container_name: pibot-tools
+    environment:
+      TOOLS_API_KEY: ${TOOLS_API_KEY}
+      TOOLS_PORT: ${TOOLS_PORT}
+      GCLONE_WORKDIR: /data
+      GCLONE_MAX_BYTES: ${GCLONE_MAX_BYTES:-20971520}
+      GCLONE_TTL_SECONDS: ${GCLONE_TTL_SECONDS:-300}
+    volumes:
+      - gclone-data:/data
+    networks:
+      - pibot-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:${TOOLS_PORT}/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 networks:
   pibot-net:
     name: pibot-net
@@ -133,3 +157,4 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  gclone-data:

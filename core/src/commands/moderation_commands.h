@@ -1,6 +1,7 @@
 #ifndef PIBOT_MODERATION_COMMANDS_H
 #define PIBOT_MODERATION_COMMANDS_H
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -9,8 +10,10 @@
 #include <td/telegram/td_api.h>
 #include <td/telegram/td_api.hpp>
 
+#include "ai/ai_client.h"
 #include "commands/command_handler.h"
 #include "rp/rp_client.h"
+#include "tools/tools_client.h"
 
 class TdlibClient;
 class DbManager;
@@ -18,7 +21,9 @@ class DbManager;
 class ModerationCommands : public CommandHandler {
 public:
     ModerationCommands(std::shared_ptr<TdlibClient> tdlib, std::shared_ptr<DbManager> db,
-                       std::shared_ptr<rp::RpClient> rpClient);
+                       std::shared_ptr<rp::RpClient> rpClient,
+                       std::shared_ptr<tools::ToolsClient> toolsClient,
+                       std::shared_ptr<ai::AiClient> aiClient);
 
     bool canHandle(const std::string& command) const override;
     void handle(const CommandContext& context) override;
@@ -44,6 +49,8 @@ private:
     void executeRpRemove(const CommandContext& context);
     void executeRpEdit(const CommandContext& context);
     void executeRpList(const CommandContext& context);
+    void executeGClone(const CommandContext& context);
+    void executeAi(const CommandContext& context);
 
     // Forwards a non-command message to the RP service and sends the matched
     // response. No-op when the RP service is not configured.
@@ -72,9 +79,15 @@ private:
     std::shared_ptr<TdlibClient> tdlib_;
     std::shared_ptr<DbManager> db_;
     std::shared_ptr<rp::RpClient> rpClient_;
+    std::shared_ptr<tools::ToolsClient> toolsClient_;
+    std::shared_ptr<ai::AiClient> aiClient_;
 
     std::mutex rateLimitMutex_;
     std::unordered_map<int64_t, int64_t> lastCommandAt_;
+
+    // Unique suffix for temporary /gclone files so concurrent clones of the
+    // same repository never write to the same path.
+    std::atomic<uint64_t> tempFileCounter_{0};
 };
 
 #endif

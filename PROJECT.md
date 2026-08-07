@@ -13,6 +13,7 @@ Technical documentation for the PiBot microservices system: architecture, the
 | `rp-service`| C++17    | oatpp, hiredis, redis-plus-plus, spdlog              | 8081            |
 | `ai-service`| Java 17   | Spring Boot 3.2 (Maven), RestClient, logstash-logback | 8082 |
 | `auto-mod`  | C++17    | oatpp (skeleton only)                                 | 8083            |
+| `tools`     | C++17    | oatpp, spdlog, git, zip                               | 8084            |
 | `postgres`  | -        | PostgreSQL 15                                        | -               |
 | `redis`     | -        | Redis 7                                              | -               |
 
@@ -27,6 +28,7 @@ Technical documentation for the PiBot microservices system: architecture, the
 |    |---->  rp-service            |
 |    +---->  ai-service            |
 |    +---->  auto-mod (skeleton)   |
+|    +---->  tools                 |
 +----------------------------------+
 ```
 
@@ -47,6 +49,7 @@ core/
 │   ├── tdlib/tdlib_client.{h,cpp}    TDLib wrapper (auth, event loop, requests)
 │   ├── commands/command_handler.h    command interface + context
 │   ├── commands/moderation_commands.{h,cpp}
+│   ├── ai/ai_client.{h,cpp}          HTTP client for the AI service (/ai command)
 │   ├── database/db_manager.{h,cpp}   PostgreSQL operations via libpqxx
 │   ├── api/api_controller.{h,cpp}    REST endpoints (X-API-Key protected)
 │   ├── logging/logger.{h,cpp}        spdlog with JSON output to stdout
@@ -70,6 +73,10 @@ core/
 | `CORE_PORT`        | `8080`     | oatpp server port                        |
 | `RP_SERVICE_URL`   | `http://rp:8081` | RP service base URL (empty disables RP) |
 | `RP_API_KEY`       | -          | Secret shared with the RP service (`X-API-Key`) |
+| `TOOLS_SERVICE_URL`| `http://tools:8084` | Tools service base URL (empty disables the tools) |
+| `TOOLS_API_KEY`    | -          | Secret shared with the tools service (`X-API-Key`) |
+| `AI_SERVICE_URL`   | `http://ai:8082` | AI service base URL (empty disables the AI) |
+| `AI_API_KEY`       | -          | Secret shared with the AI service (`X-API-Key`) |
 | `LOG_LEVEL`        | `info`     | `debug` / `info` / `warn` / `error`      |
 
 ### REST API (internal network)
@@ -123,6 +130,8 @@ to users who are not (their admin rights must first be removed manually).
 | `/rpremove < trigger >` | owner (1) | Remove an RP command                       |
 | `/rpedit < trigger > < response >` | owner (1) | Update an RP command's response            |
 | `/rplist`              | owner (1) | List the chat's RP commands                |
+| `/gclone < URL >`      | admin+ (2) | Clone a git repository and send it to the chat as a `.zip` archive |
+| `/ai < message >`      | owner (1) | Send a message to the AI service and reply with its text response |
 
 `<target>` is `@username`, a numeric user ID, or a reply to a message.
 Globally banned users are silently ignored before any command parsing.
@@ -188,6 +197,65 @@ enabled (`--appendonly yes`) so commands survive restarts.
 
 ---
 
+## Tools service
+
+Hosts small utilities behind a single oatpp HTTP service. It has no Telegram
+access; the `core` service calls it over the internal network and forwards the
+results to chats. Currently contains a single tool: the **git cloner**.
+
+### Layout
+
+```
+tools-service/
+├── src/
+│   ├── main.cpp                 entry point: oatpp server + archive sweeper thread
+│   ├── api/api_controller.h     REST endpoints (X-API-Key protected)
+│   ├── api/api_controller.cpp
+│   ├── service/git_cloner.{h,cpp}   clone + zip + 5-minute archive cache
+│   └── logging/logger.{h,cpp}        spdlog with JSON output to stdout
+└── Dockerfile
+```
+
+### Environment variables
+
+| Variable              | Default    | Description                              |
+| --------------------- | ---------- | ---------------------------------------- |
+| `TOOLS_PORT`          | `8084`     | oatpp server port                        |
+| `TOOLS_API_KEY`       | -          | Secret required for `/gclone` (`X-API-Key`) |
+| `GCLONE_WORKDIR`      | `/data`    | Directory for cloned sources and archives (volume `gclone-data`) |
+| `GCLONE_MAX_BYTES`    | `20971520` | Max `.zip` archive size (20 MB)          |
+| `GCLONE_TTL_SECONDS`  | `300`      | Archive cache lifetime (5 minutes)       |
+| `LOG_LEVEL`           | `info`     | `debug` / `info` / `warn` / `error`      |
+
+### REST API (internal network)
+
+All `/gclone` requests require `X-API-Key`; `/health` is public.
+
+| Method | Path      | Body          | Description                              |
+| ------ | --------- | ------------- | ---------------------------------------- |
+| GET    | `/health` | -             | Health check                             |
+| POST   | `/gclone` | `{"url": "..."}` | Clones the repo and returns the `.zip` archive as the response body |
+
+`/gclone` returns `200` with `Content-Type: application/zip` and the archive
+file name in the `X-Archive-Name` header on success; on failure it returns a
+`4xx` with a plain-text error message.
+
+### Git cloner
+
+- Performs a shallow clone (`git clone --depth 1`); only HTTP(S) and
+  `git@`/`git://` URLs are accepted. The `.git` directory is excluded from the
+  archive.
+- If the resulting `.zip` exceeds `GCLONE_MAX_BYTES` (20 MB by default) the
+  archive is deleted and the request fails.
+- Archives are cached on disk for `GCLONE_TTL_SECONDS` (5 minutes by default):
+  a repeated `/gclone` of the same URL within that window is served from cache
+  without re-cloning. A background sweeper thread removes expired archives to
+  free disk space; each successful request refreshes the cache TTL.
+- The `core` service downloads the archive and sends it to the chat as a
+  document via TDLib.
+
+---
+
 ## Project layout
 
 ```
@@ -195,6 +263,7 @@ core/            C++ core service (TDLib bot engine, REST API, DB manager)
 rp-service/      C++ RP service (role-play commands in Redis)
 ai-service/      Java 17 AI service (Spring Boot skeleton: REST API, structured logging)
 auto-mod/        C++ auto-moderation skeleton (returns 200)
+tools-service/   C++ tools service (git cloner, zip archives with TTL cache)
 scripts/         Build helpers
 docker-compose.yml
 .env             Secrets and configuration (dummy values for local use)

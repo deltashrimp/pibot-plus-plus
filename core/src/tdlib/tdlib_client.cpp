@@ -1,5 +1,9 @@
 #include "tdlib/tdlib_client.h"
 
+#include <cstdio>
+#include <filesystem>
+#include <system_error>
+
 #include "logging/logger.h"
 
 namespace {
@@ -113,6 +117,40 @@ void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
                         auto err = downcast<td::td_api::error>(sendResult);
                         Logger::warn("failed to send message: " + err->message_, 0, chatId);
                     }
+                });
+}
+
+void TdlibClient::sendDocument(int64_t chatId, const std::string& filePath,
+                               int64_t replyToMessageId) {
+    auto file = td::td_api::make_object<td::td_api::inputFileLocal>();
+    file->path_ = filePath;
+    auto content = td::td_api::make_object<td::td_api::inputMessageDocument>();
+    content->document_ = std::move(file);
+    content->disable_content_type_detection_ = false;
+    auto send = td::td_api::make_object<td::td_api::sendMessage>();
+    send->chat_id_ = chatId;
+    send->input_message_content_ = std::move(content);
+    if (replyToMessageId > 0) {
+        send->reply_to_message_id_ = replyToMessageId;
+    }
+    // TDLib returns the created message immediately, before the file upload
+    // has finished (MessagesManager::send_message returns synchronously), so
+    // the temp file must NOT be removed here. It is registered by its temporary
+    // (negative) message id and deleted later, when the upload outcome arrives
+    // as updateMessageSendSucceeded / updateMessageSendFailed / updateDeleteMessages.
+    sendRequest(std::move(send),
+                [this, chatId, filePath](td::td_api::object_ptr<td::td_api::Object> sendResult) {
+                    if (sendResult->get_id() == td::td_api::error::ID) {
+                        auto err = downcast<td::td_api::error>(sendResult);
+                        Logger::warn("failed to send document: " + err->message_, 0, chatId);
+                        std::error_code ec;
+                        std::filesystem::remove(filePath, ec);
+                        std::filesystem::remove(std::filesystem::path(filePath).parent_path(), ec);
+                        return;
+                    }
+                    auto msg = downcast<td::td_api::message>(sendResult);
+                    std::lock_guard<std::mutex> lock(pendingDocsMutex_);
+                    pendingDocuments_[{chatId, msg->id_}] = PendingDocument{chatId, filePath};
                 });
 }
 
@@ -261,6 +299,23 @@ void TdlibClient::banChatMember(int64_t chatId, int64_t userId, int32_t bannedUn
     sendRequest(std::move(req), std::move(callback));
 }
 
+void TdlibClient::removePendingDocument(int64_t chatId, int64_t messageId) {
+    PendingDocument pending;
+    {
+        std::lock_guard<std::mutex> lock(pendingDocsMutex_);
+        auto it = pendingDocuments_.find({chatId, messageId});
+        if (it == pendingDocuments_.end()) {
+            return;
+        }
+        pending = std::move(it->second);
+        pendingDocuments_.erase(it);
+    }
+    Logger::info("document sent", pending.chat_id, 0, pending.path);
+    std::error_code ec;
+    std::filesystem::remove(pending.path, ec);
+    std::filesystem::remove(std::filesystem::path(pending.path).parent_path(), ec);
+}
+
 void TdlibClient::processUpdate(td::td_api::object_ptr<td::td_api::Object> update) {
     switch (update->get_id()) {
         case td::td_api::updateAuthorizationState::ID: {
@@ -272,6 +327,32 @@ void TdlibClient::processUpdate(td::td_api::object_ptr<td::td_api::Object> updat
             auto updateMessage = downcast<td::td_api::updateNewMessage>(update);
             if (messageHandler_) {
                 messageHandler_(std::move(updateMessage->message_));
+            }
+            break;
+        }
+        case td::td_api::updateMessageSendSucceeded::ID: {
+            auto updateOk = downcast<td::td_api::updateMessageSendSucceeded>(update);
+            const int64_t chatId = updateOk->message_ ? updateOk->message_->chat_id_ : 0;
+            removePendingDocument(chatId, updateOk->old_message_id_);
+            break;
+        }
+        case td::td_api::updateMessageSendFailed::ID: {
+            auto updateFail = downcast<td::td_api::updateMessageSendFailed>(update);
+            const int64_t chatId = updateFail->message_ ? updateFail->message_->chat_id_ : 0;
+            Logger::warn("document send failed: " + updateFail->error_message_, 0, chatId);
+            removePendingDocument(chatId, updateFail->old_message_id_);
+            if (updateFail->message_) {
+                removePendingDocument(chatId, updateFail->message_->id_);
+            }
+            break;
+        }
+        case td::td_api::updateDeleteMessages::ID: {
+            // A sending file message can be irrecoverably deleted instead of
+            // producing updateMessageSendFailed; clean up the temp file if one
+            // of the deleted messages is a pending document of ours.
+            auto updateDelete = downcast<td::td_api::updateDeleteMessages>(update);
+            for (const auto messageId : updateDelete->message_ids_) {
+                removePendingDocument(updateDelete->chat_id_, messageId);
             }
             break;
         }

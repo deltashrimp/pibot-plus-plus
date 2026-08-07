@@ -1,3 +1,10 @@
+# **V-1.3 Tools**
+*07.08.2026*
+
+Tools module is ready. Fixed Core. AI module is not included in compose build (commented out).
+
+---
+
 # **V-1.2 Roleplay**
 *03.08.2026*
 

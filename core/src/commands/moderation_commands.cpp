@@ -2,10 +2,14 @@
 
 #include <atomic>
 #include <cctype>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
+#include <system_error>
+#include <thread>
 #include <unordered_map>
 
 #include "database/db_manager.h"
@@ -21,6 +25,15 @@ constexpr int64_t kCommandCooldownSeconds = 1;
 template <class To, class From>
 td::td_api::object_ptr<To> downcast(td::td_api::object_ptr<From>& obj) {
     return td::td_api::object_ptr<To>(static_cast<To*>(obj.release()));
+}
+
+bool writeFile(const std::string& path, const std::vector<char>& bytes) {
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        return false;
+    }
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    return out.good();
 }
 
 std::string rankLabel(int rank) {
@@ -42,17 +55,22 @@ std::string rankLabel(int rank) {
 
 ModerationCommands::ModerationCommands(std::shared_ptr<TdlibClient> tdlib,
                                        std::shared_ptr<DbManager> db,
-                                       std::shared_ptr<rp::RpClient> rpClient)
+                                       std::shared_ptr<rp::RpClient> rpClient,
+                                       std::shared_ptr<tools::ToolsClient> toolsClient,
+                                       std::shared_ptr<ai::AiClient> aiClient)
     : tdlib_(std::move(tdlib)),
       db_(std::move(db)),
-      rpClient_(std::move(rpClient)) {}
+      rpClient_(std::move(rpClient)),
+      toolsClient_(std::move(toolsClient)),
+      aiClient_(std::move(aiClient)) {}
 
 bool ModerationCommands::canHandle(const std::string& command) const {
     return command == "start" || command == "mute" || command == "unmute" ||
            command == "kick" || command == "ban" || command == "unban" ||
            command == "globalban" || command == "globalunban" || command == "rank" ||
            command == "ranks" || command == "rpadd" || command == "rpremove" ||
-           command == "rpedit" || command == "rplist";
+           command == "rpedit" || command == "rplist" || command == "gclone" ||
+           command == "ai";
 }
 
 bool ModerationCommands::allowCommand(int64_t senderId) {
@@ -96,6 +114,10 @@ void ModerationCommands::handle(const CommandContext& context) {
         executeRpEdit(context);
     } else if (context.command == "rplist") {
         executeRpList(context);
+    } else if (context.command == "gclone") {
+        executeGClone(context);
+    } else if (context.command == "ai") {
+        executeAi(context);
     }
 }
 
@@ -739,6 +761,96 @@ void ModerationCommands::executeRpList(const CommandContext& context) {
         [this, context](const std::string& err) { reply(context, err); });
 }
 
+void ModerationCommands::executeGClone(const CommandContext& context) {
+    requireRank(context, 2,
+                [this, context] {
+                    if (context.args.empty()) {
+                        reply(context, "Использование: /gclone <URL репозитория>");
+                        return;
+                    }
+                    if (!toolsClient_ || !toolsClient_->enabled()) {
+                        reply(context, "Git-клонер не настроен.");
+                        return;
+                    }
+
+                    const std::string url = context.args[0];
+                    reply(context, "Клонирую " + url + "...");
+
+                    // The clone is a slow blocking operation; run it off the
+                    // TDLib event loop so the bot keeps responding to other
+                    // messages meanwhile.
+                    std::thread([this, context, url] {
+                        const auto result = toolsClient_->clone(url);
+                        if (!result.ok) {
+                            reply(context, result.error.empty()
+                                               ? "Не удалось клонировать репозиторий."
+                                               : result.error);
+                            Logger::warn("gclone failed", context.sender_id,
+                                         context.chat_id, result.error);
+                            return;
+                        }
+
+                        // Unique temp directory so concurrent clones of the
+                        // same repo never clobber each other's file; the file
+                        // basename becomes the document name in the chat.
+                        const std::string dir =
+                            "/tmp/gclone_" + std::to_string(helpers::unixNow()) + "_" +
+                            std::to_string(tempFileCounter_.fetch_add(1));
+                        std::error_code ec;
+                        if (!std::filesystem::create_directories(dir, ec)) {
+                            reply(context, "Не удалось сохранить архив.");
+                            return;
+                        }
+                        const std::string path = dir + "/" + result.archive_name;
+                        if (!writeFile(path, result.archive_bytes)) {
+                            reply(context, "Не удалось сохранить архив.");
+                            std::filesystem::remove_all(dir, ec);
+                            return;
+                        }
+
+                        Logger::info("gclone archive ready", context.sender_id,
+                                     context.chat_id, result.archive_name);
+                        tdlib_->sendDocument(context.chat_id, path, context.message_id);
+                    }).detach();
+                },
+                [this, context](const std::string& err) { reply(context, err); });
+}
+
+void ModerationCommands::executeAi(const CommandContext& context) {
+    requireRank(context, 1,
+                [this, context] {
+                    const std::string message = context.raw_args;
+                    if (message.empty()) {
+                        reply(context, "Использование: /ai <сообщение>");
+                        return;
+                    }
+                    if (!aiClient_ || !aiClient_->enabled()) {
+                        reply(context, "AI-сервис не настроен.");
+                        return;
+                    }
+
+                    // The AI call is a slow blocking operation; run it off the
+                    // TDLib event loop so the bot keeps responding to other
+                    // messages meanwhile.
+                    std::thread([this, context, message] {
+                        const auto result = aiClient_->ask(message);
+                        if (!result.ok) {
+                            reply(context, result.error.empty()
+                                               ? "Не удалось получить ответ от AI."
+                                               : result.error);
+                            Logger::warn("ai ask failed", context.sender_id,
+                                         context.chat_id, result.error);
+                            return;
+                        }
+                        Logger::info("ai response ready", context.sender_id,
+                                     context.chat_id, "");
+                        tdlib_->sendTextPlain(context.chat_id, result.response,
+                                              context.message_id);
+                    }).detach();
+                },
+                [this, context](const std::string& err) { reply(context, err); });
+}
+
 void ModerationCommands::executeStart(const CommandContext& context) {
     const std::string text =
         "Привет! Я модератор-бот PiBot.\n\n"
@@ -753,7 +865,9 @@ void ModerationCommands::executeStart(const CommandContext& context) {
         "/rpadd <триггер> <ответ> - добавить RP-команду\n"
         "/rpremove <триггер> - удалить RP-команду\n"
         "/rpedit <триггер> <ответ> - изменить RP-команду\n"
-        "/rplist - список RP-команд в чате\n\n"
+        "/rplist - список RP-команд в чате\n"
+        "/gclone <URL> - скачать репозиторий архивом (.zip)\n"
+        "/ai <сообщение> - спросить у ИИ\n\n"
         "RP-команды срабатывают обычным сообщением, например: обнять @user\n"
         "Цель RP — @username, числовой id или ответ на сообщение.\n"
         "В ответах RP-команд можно использовать {mention}, {mention1} (автор) "

@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -28,6 +29,13 @@ public:
                      Callback callback = nullptr);
     void sendText(int64_t chatId, const std::string& text, int64_t replyToMessageId = 0);
     void sendTextPlain(int64_t chatId, const std::string& text, int64_t replyToMessageId = 0);
+
+    // Uploads and sends a local file as a document to the chat. The temporary
+    // local copy is removed only after the upload actually completes (tracked
+    // via updateMessageSendSucceeded / updateMessageSendFailed / updateDeleteMessages),
+    // because TDLib keeps reading the file from disk while the upload runs.
+    void sendDocument(int64_t chatId, const std::string& filePath,
+                      int64_t replyToMessageId = 0);
     void resolveUsername(const std::string& username,
                          std::function<void(int64_t userId)> onResult,
                          std::function<void(const std::string&)> onError = nullptr);
@@ -56,6 +64,16 @@ private:
     void processAuthorizationState(td::td_api::object_ptr<td::td_api::Object> state);
     void loop();
 
+    // Removes the temp file registered for a sending document and its parent
+    // directory once the send outcome is known. `messageId` is the temporary
+    // (negative) message id used as the lookup key.
+    void removePendingDocument(int64_t chatId, int64_t messageId);
+
+    struct PendingDocument {
+        int64_t chat_id = 0;
+        std::string path;
+    };
+
     std::unique_ptr<td::Client> client_;
     std::string token_;
     std::string apiHash_;
@@ -66,6 +84,11 @@ private:
     uint64_t nextRequestId_ = 1;
     std::unordered_map<uint64_t, Callback> callbacks_;
     MessageHandler messageHandler_;
+    std::mutex pendingDocsMutex_;
+    // Temporary (negative) message id -> temp file that must be deleted when
+    // the send of that message completes. Local message ids are only unique
+    // per chat, hence the (chat_id, message_id) key.
+    std::map<std::pair<int64_t, int64_t>, PendingDocument> pendingDocuments_;
 };
 
 #endif
