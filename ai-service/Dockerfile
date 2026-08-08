@@ -1,8 +1,3 @@
-FROM ubuntu:24.04
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
-
 FROM gradle:8-jdk21 AS build
 WORKDIR /app
 
@@ -15,6 +10,8 @@ RUN ./gradlew build
 
 
 FROM eclipse-temurin:21-jre-alpine
+
+RUN apk add --no-cache curl
 
 COPY --from=build /app/build/libs/*.jar app.jar
 

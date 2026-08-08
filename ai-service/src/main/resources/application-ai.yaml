@@ -1,6 +1,10 @@
-  api-key: ""
-  api-url: ""
-  model: ""
-  
-  rules: ""
-  bio: ""
+api-key: "${OPENROUTER_API_KEY}"
+api-url: "https://openrouter.ai/api/v1/chat/completions"
+model: "openai/gpt-oss-20b:free"
+# Rules and bio are inserted into the AI's system prompt. To load them from disk,
+# use "file:/absolute/path" (relative paths resolve against the working dir). The
+# files are re-read on startup and on every POST /reload_config. In Docker, the
+# ./ai-service/src/main/resources dir is mounted at /app-config, so edits apply
+# without a rebuild.
+rules: "file:/app-config/ruleset.md"
+bio: "file:/app-config/bio.md"

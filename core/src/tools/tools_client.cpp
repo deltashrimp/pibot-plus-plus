@@ -92,7 +92,7 @@ CloneResult ToolsClient::clone(const std::string& url) {
         req->url = url.c_str();
         oatpp::String json = objectMapper->writeToString(req);
 
-        auto response = postJson(baseUrl_, apiKey_, "/gclone", json);
+        auto response = postJson(baseUrl_, apiKey_, "gclone", json);
         if (response == nullptr) {
             result.error = "tools-service недоступен.";
             return result;

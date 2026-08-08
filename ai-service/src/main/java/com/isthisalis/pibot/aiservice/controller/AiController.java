@@ -27,8 +27,8 @@ public class AiController {
 
     private final AI aiCaller;
 
-    @Value("${core-api-key}")
-    private String coreApiKey;
+    @Value("${ai-request-key}")
+    private String aiRequestKey;
 
     public AiController(AI aiCaller) {
         this.aiCaller = aiCaller;
@@ -67,7 +67,7 @@ public class AiController {
     }
 
     private boolean authorized(String apiKeyHeader) {
-        if (apiKeyHeader == null || !apiKeyHeader.equals(coreApiKey)) {
+        if (apiKeyHeader == null || !apiKeyHeader.equals(aiRequestKey)) {
             return false;
         }
         return true;

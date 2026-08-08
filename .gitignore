@@ -271,3 +271,6 @@ gradle-app.setting
 *.hprof
 
 .dev 
+internal/
+ai-service/src/main/resources/ruleset.md
+ai-service/src/main/resources/bio.md

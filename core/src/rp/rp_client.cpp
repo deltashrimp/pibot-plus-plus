@@ -146,7 +146,7 @@ MatchResult RpClient::match(int64_t chatId, int64_t userId, const std::string& t
         }
 
         oatpp::String json = objectMapper->writeToString(req);
-        auto response = postJson(baseUrl_, apiKey_, "/rp/match", json);
+        auto response = postJson(baseUrl_, apiKey_, "rp/match", json);
         if (response == nullptr) {
             return result;
         }
@@ -195,7 +195,7 @@ CommandResult RpClient::executeCommand(const std::string& action, int64_t chatId
             req->response = response.c_str();
         }
         oatpp::String json = objectMapper->writeToString(req);
-        auto responsePtr = postJson(baseUrl_, apiKey_, "/rp/command", json);
+        auto responsePtr = postJson(baseUrl_, apiKey_, "rp/command", json);
         if (responsePtr == nullptr) {
             result.message = "RP-сервис недоступен.";
             return result;
@@ -250,7 +250,7 @@ std::unordered_map<std::string, std::string> RpClient::listCommands(int64_t chat
         req->action = "list";
         req->chat_id = chatId;
         oatpp::String json = objectMapper->writeToString(req);
-        auto response = postJson(baseUrl_, apiKey_, "/rp/command", json);
+        auto response = postJson(baseUrl_, apiKey_, "rp/command", json);
         if (response == nullptr || response->getStatusCode() != 200) {
             return result;
         }

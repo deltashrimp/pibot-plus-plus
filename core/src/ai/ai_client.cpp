@@ -88,7 +88,7 @@ AskResult AiClient::ask(const std::string& message) {
         headers.put("X-API-Key", oatpp::String(apiKey_.c_str()));
         auto body = oatpp::web::protocol::http::outgoing::BufferBody::createShared(
             json, "application/json");
-        auto response = executor->execute("POST", "/ai/ask", headers, body, nullptr);
+        auto response = executor->execute("POST", "ai/ask", headers, body, nullptr);
         if (response == nullptr) {
             result.error = "AI-сервис недоступен.";
             return result;

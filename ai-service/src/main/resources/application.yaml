@@ -19,7 +19,7 @@ logging:
   config: classpath:logback-spring.xml
 
 # Key that callers must send as the X-API-Key header (env AI_API_KEY).
-core-api-key: ${AI_API_KEY:default-key}
+ai-request-key: ${AI_API_KEY:default-key}
 # Base URL of Core's internal REST API (built from CORE_HOST/CORE_PORT).
 core-api-url: ${CORE_API_URL:http://${CORE_HOST:core}:${CORE_PORT:8080}}
 

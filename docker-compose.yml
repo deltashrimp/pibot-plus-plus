@@ -87,30 +87,30 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ai:
-  #   build: ./ai-service
-  #   container_name: pibot-ai
-  #   ports:
-  #     - "${AI_PORT:-8082}:${AI_PORT:-8082}"
-  #   depends_on:
-  #     core:
-  #      condition: service_healthy
-  #   environment:
-  #     AI_PORT: ${AI_PORT}
-  #     AI_API_KEY: ${AI_API_KEY}
-  #     GROQ_API_KEY: ${GROQ_API_KEY}
-  #     OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-  #     CORE_API_KEY: ${CORE_API_KEY}
-  #     CORE_HOST: core
-  #     CORE_PORT: ${CORE_PORT}
-  #   networks:
-  #     - pibot-net
-  #  healthcheck:
-  #     test: ["CMD-SHELL", "curl -f http://localhost:${AI_PORT:-8082}/health || exit 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
-  #  restart: unless-stopped
+  ai:
+    build: ./ai-service
+    container_name: pibot-ai
+    depends_on:
+      core:
+        condition: service_healthy
+    environment:
+      AI_PORT: ${AI_PORT}
+      AI_API_KEY: ${AI_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      CORE_API_KEY: ${CORE_API_KEY}
+      CORE_HOST: core
+      CORE_PORT: ${CORE_PORT}
+    volumes:
+      - ./ai-service/src/main/resources:/app-config
+    networks:
+      - pibot-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:${AI_PORT:-8082}/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
   auto-mod:
     build: ./auto-mod
