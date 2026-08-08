@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.*;
 /**
  * REST endpoints.
  *
- * <p>{@code POST /ai/generate} and {@code POST /reload_config} require the
- * {@code X-API-Key} header to match {@code ai.api-key} (env {@code AI_API_KEY});
+ * <p>{@code POST /ai/ask} and {@code POST /reload_config} require the
+ * {@code X-API-Key} header to match {@code ai-request-key} (env {@code AI_API_KEY});
  * {@code GET /health} is public so the Docker healthcheck can probe it.
  */
 @RestController
