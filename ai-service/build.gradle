@@ -30,12 +30,16 @@ repositories {
 
 
 dependencies {
-   implementation 'org.springframework.boot:spring-boot-starter-web'
-   implementation 'org.springframework.boot:spring-boot-starter-data-rest'
+   implementation 'org.springframework.boot:spring-boot-starter-web:4.1.0'
+   implementation 'org.springframework.boot:spring-boot-starter-data-rest:4.1.0'
    //implementation 'org.springframework.boot:spring-boot-starter-security'
 
    implementation 'org.slf4j:slf4j-api'
 
+   implementation 'io.github.isthisalis:ailib:1.0.2'
+
    compileOnly 'org.projectlombok:lombok:1.18.46'
    annotationProcessor 'org.projectlombok:lombok:1.18.46'
+
+   implementation 'tools.jackson.dataformat:jackson-dataformat-yaml:3.2.1'
 }
