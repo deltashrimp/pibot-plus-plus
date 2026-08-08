@@ -1,19 +1,17 @@
 package com.isthisalis.pibot.aiservice.controller;
 
-import com.isthisalis.pibot.aiservice.model.RequestResponse.AiRequest;
-import com.isthisalis.pibot.aiservice.model.RequestResponse.AiResponse;
-import com.isthisalis.pibot.aiservice.service.AiService;
+import com.isthisalis.pibot.aiservice.api.Request;
+import com.isthisalis.pibot.aiservice.api.Response;
+import com.isthisalis.pibot.aiservice.service.AI;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
-
-import java.util.Map;
 
 /**
  * REST endpoints.
@@ -27,51 +25,51 @@ public class AiController {
 
     private static final Logger log = LoggerFactory.getLogger(AiController.class);
 
-    private final AiService aiService;
+    private final AI aiCaller;
 
-    @Value("${ai.api-key}")
-    private String apiKey;
+    @Value("${core-api-key}")
+    private String coreApiKey;
 
-    public AiController(AiService aiService) {
-        this.aiService = aiService;
+    public AiController(AI aiCaller) {
+        this.aiCaller = aiCaller;
     }
 
     @PostMapping("/ai/ask")
-    public ResponseEntity<AiResponse> ask(
+    public ResponseEntity<Response> ask(
             @RequestHeader(value = "X-API-Key", required = false) String apiKeyHeader,
-            @RequestBody AiRequest request) {
-        requireApiKey(apiKeyHeader);
+            @RequestBody Request request) {
+        if (!authorized(apiKeyHeader)) return ResponseEntity.status(HttpStatusCode.valueOf(401)).build();
 
-        //MDC.put("user_id", String.valueOf(request.user_id()));
-        //MDC.put("chat_id", String.valueOf(request.chat_id()));
         long start = System.nanoTime();
         try {
-            AiResponse response = aiService.generate(request);
+            Response response = new Response(aiCaller.generate(request.getMessage()));
+
             MDC.put("duration_ms",
                     String.valueOf((System.nanoTime() - start) / 1_000_000));
-            //log.info("generated response for user {}", request.user_id());
-            return ResponseEntity.ok(response);
+            log.info("Generated response: ", response.getResponse());
+
+            if (!response.getResponse().equals("none")) return ResponseEntity.ok(response);
+            return ResponseEntity.ok(new Response(""));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         } finally {
             MDC.clear();
         }
     }
 
-    @GetMapping("/health")
-    public ResponseEntity<Map<String, String>> health() {
-        return ResponseEntity.ok(Map.of("status", "ok"));
-    }
 
     @PostMapping("/reload_config")
     public ResponseEntity<Void> reloadConfig(
             @RequestHeader(value = "X-API-Key", required = false) String apiKeyHeader) {
-        requireApiKey(apiKeyHeader);
-        aiService.reloadConfig();
+        if (!authorized(apiKeyHeader)) return ResponseEntity.status(HttpStatusCode.valueOf(401)).build();
+        aiCaller.reloadConfig();
         return ResponseEntity.ok().build();
     }
 
-    private void requireApiKey(String apiKeyHeader) {
-        if (apiKeyHeader == null || !apiKeyHeader.equals(apiKey)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+    private boolean authorized(String apiKeyHeader) {
+        if (apiKeyHeader == null || !apiKeyHeader.equals(coreApiKey)) {
+            return false;
         }
+        return true;
     }
 }
