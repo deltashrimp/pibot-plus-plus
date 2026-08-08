@@ -23,4 +23,4 @@ ENV AI_PORT=8082 \
 
 EXPOSE 8082
 
-ENTRYPOINT ["java", "-jar", "app.jar", "--server-port=${port: -8082}"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
