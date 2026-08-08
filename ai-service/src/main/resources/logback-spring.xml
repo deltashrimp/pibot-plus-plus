@@ -5,20 +5,9 @@
          (core, auto-mod). MDC keys user_id/chat_id/duration_ms are emitted
          when present. -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
-            <fieldNames>
-                <timestamp>ts</timestamp>
-                <level>level</level>
-                <logger>logger</logger>
-                <message>message</message>
-                <thread>[ignore]</thread>
-                <levelValue>[ignore]</levelValue>
-                <version>[ignore]</version>
-            </fieldNames>
-            <includeMdcKeyName>user_id</includeMdcKeyName>
-            <includeMdcKeyName>chat_id</includeMdcKeyName>
-            <includeMdcKeyName>duration_ms</includeMdcKeyName>
-        </encoder>
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>  
     </appender>
 
     <root level="${LOG_LEVEL:-INFO}">
