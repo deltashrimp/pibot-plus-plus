@@ -274,3 +274,9 @@ gradle-app.setting
 internal/
 ai-service/src/main/resources/ruleset.md
 ai-service/src/main/resources/bio.md
+
+# Repowise local index & generated tool configs
+.repowise/
+.claude/
+.mcp.json
+opencode.jsonc
