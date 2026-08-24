@@ -19,16 +19,6 @@
 
 namespace {
 
-// Must be visible to the controller defined below (macro-expanded later).
-const char* actionTypeToString(ActionType type) {
-    switch (type) {
-        case ActionType::Allow: return "Allow";
-        case ActionType::MuteTemporary: return "MuteTemporary";
-        case ActionType::MutePermanent: return "MutePermanent";
-    }
-    return "Allow";
-}
-
 // Users with rank <= 3 (dev, owner, admin+, admin) are exempt from automatic
 // moderation, mirroring the old Python bot.
 constexpr int kPrivilegedMaxRank = 3;
@@ -117,7 +107,7 @@ public:
                 Action action = moderator_->skip_privileged(
                     *dto->chat_id, *dto->user_id, dto->text->c_str());
                 auto response = ModerateResponseDto::createShared();
-                response->action = actionTypeToString(action.type);
+                response->action = action_type_to_string(action.type);
                 response->duration_seconds = action.duration_seconds;
                 response->delete_message = action.delete_message;
                 return createDtoResponse(Status::CODE_200, response);
@@ -131,7 +121,7 @@ public:
             *dto->chat_id, *dto->user_id, dto->text->c_str(), timestamp);
 
         auto response = ModerateResponseDto::createShared();
-        response->action = actionTypeToString(action.type);
+        response->action = action_type_to_string(action.type);
         response->duration_seconds = action.duration_seconds;
         response->delete_message = action.delete_message;
         return createDtoResponse(Status::CODE_200, response);

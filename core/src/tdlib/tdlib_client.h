@@ -29,6 +29,12 @@ public:
                      Callback callback = nullptr);
     void sendText(int64_t chatId, const std::string& text, int64_t replyToMessageId = 0);
     void sendTextPlain(int64_t chatId, const std::string& text, int64_t replyToMessageId = 0);
+    // Same as sendTextPlain, but reports the created message's id via onSent
+    // once TDLib confirms the send (0 on failure).
+    void sendTextPlain(int64_t chatId, const std::string& text, int64_t replyToMessageId,
+                       std::function<void(int64_t sentMessageId)> onSent);
+    // Replaces the plain-text content of an already sent message.
+    void editMessageText(int64_t chatId, int64_t messageId, const std::string& text);
 
     // Uploads and sends a local file as a document to the chat. The temporary
     // local copy is removed only after the upload actually completes (tracked
@@ -60,8 +66,18 @@ public:
 private:
     void sendRequestImpl(td::td_api::object_ptr<td::td_api::Function> function,
                          Callback callback = nullptr);
+    // Wraps content into sendMessage and sends it; a null callback gets the
+    // default one that logs send failures.
+    void sendMessageContent(int64_t chatId,
+                            td::td_api::object_ptr<td::td_api::InputMessageContent> content,
+                            int64_t replyToMessageId,
+                            Callback callback = nullptr);
     void processUpdate(td::td_api::object_ptr<td::td_api::Object> update);
     void processAuthorizationState(td::td_api::object_ptr<td::td_api::Object> state);
+    void deliverNewMessage(td::td_api::object_ptr<td::td_api::message> message);
+    void handleDocumentSendFailure(
+        td::td_api::object_ptr<td::td_api::updateMessageSendFailed> update);
+    void handleDeletedMessages(td::td_api::object_ptr<td::td_api::updateDeleteMessages> update);
     void loop();
 
     // Removes the temp file registered for a sending document and its parent

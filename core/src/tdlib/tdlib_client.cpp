@@ -13,6 +13,44 @@ td::td_api::object_ptr<To> downcast(td::td_api::object_ptr<From>& obj) {
     return td::td_api::object_ptr<To>(static_cast<To*>(obj.release()));
 }
 
+// Chat id of a message object, 0 when the message is absent.
+int64_t chat_id_of(const td::td_api::object_ptr<td::td_api::message>& message) {
+    return message ? message->chat_id_ : 0;
+}
+
+// TDLib parameters for the bot's local database, as expected by
+// authorizationStateWaitTdlibParameters.
+td::td_api::object_ptr<td::td_api::tdlibParameters> make_tdlib_parameters(
+    int32_t apiId, const std::string& apiHash) {
+    auto params = td::td_api::make_object<td::td_api::tdlibParameters>();
+    params->use_test_dc_ = false;
+    params->api_id_ = apiId;
+    params->api_hash_ = apiHash;
+    params->database_directory_ = "/tmp/tdlib";
+    params->files_directory_ = "/tmp/tdlib";
+    params->use_file_database_ = false;
+    params->use_chat_info_database_ = true;
+    params->use_message_database_ = false;
+    params->use_secret_chats_ = false;
+    params->system_language_code_ = "en";
+    params->device_model_ = "PiBot Core";
+    params->system_version_ = "linux";
+    params->application_version_ = "1.0.0";
+    params->enable_storage_optimizer_ = true;
+    params->ignore_file_names_ = false;
+    return params;
+}
+
+// Callback that logs "<what><TDLib error message>" when the request fails.
+TdlibClient::Callback log_error_callback(std::string what) {
+    return [what = std::move(what)](td::td_api::object_ptr<td::td_api::Object> result) {
+        if (result->get_id() == td::td_api::error::ID) {
+            auto err = downcast<td::td_api::error>(result);
+            Logger::error(what + err->message_);
+        }
+    };
+}
+
 }  // namespace
 
 TdlibClient::TdlibClient() : client_(std::make_unique<td::Client>()) {}
@@ -64,6 +102,26 @@ void TdlibClient::sendRequestImpl(td::td_api::object_ptr<td::td_api::Function> f
     }
 }
 
+void TdlibClient::sendMessageContent(
+    int64_t chatId, td::td_api::object_ptr<td::td_api::InputMessageContent> content,
+    int64_t replyToMessageId, Callback callback) {
+    auto send = td::td_api::make_object<td::td_api::sendMessage>();
+    send->chat_id_ = chatId;
+    send->input_message_content_ = std::move(content);
+    if (replyToMessageId > 0) {
+        send->reply_to_message_id_ = replyToMessageId;
+    }
+    if (!callback) {
+        callback = [chatId](td::td_api::object_ptr<td::td_api::Object> sendResult) {
+            if (sendResult->get_id() == td::td_api::error::ID) {
+                auto err = downcast<td::td_api::error>(sendResult);
+                Logger::warn("failed to send message: " + err->message_, 0, chatId);
+            }
+        };
+    }
+    sendRequest(std::move(send), std::move(callback));
+}
+
 void TdlibClient::sendText(int64_t chatId, const std::string& text, int64_t replyToMessageId) {
     auto parse = td::td_api::make_object<td::td_api::parseTextEntities>();
     parse->text_ = text;
@@ -81,41 +139,56 @@ void TdlibClient::sendText(int64_t chatId, const std::string& text, int64_t repl
             content->text_ = std::move(parsed);
             content->disable_web_page_preview_ = false;
             content->clear_draft_ = false;
-            auto send = td::td_api::make_object<td::td_api::sendMessage>();
-            send->chat_id_ = chatId;
-            send->input_message_content_ = std::move(content);
-            if (replyToMessageId > 0) {
-                send->reply_to_message_id_ = replyToMessageId;
-            }
-            sendRequest(std::move(send),
-                        [chatId](td::td_api::object_ptr<td::td_api::Object> sendResult) {
-                            if (sendResult->get_id() == td::td_api::error::ID) {
-                                auto err = downcast<td::td_api::error>(sendResult);
-                                Logger::warn("failed to send message: " + err->message_, 0, chatId);
-                            }
-                        });
+            sendMessageContent(chatId, std::move(content), replyToMessageId);
         });
 }
 
 void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
                                 int64_t replyToMessageId) {
+    sendTextPlain(chatId, text, replyToMessageId, nullptr);
+}
+
+void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
+                                int64_t replyToMessageId,
+                                std::function<void(int64_t sentMessageId)> onSent) {
     auto content = td::td_api::make_object<td::td_api::inputMessageText>();
     auto formatted = td::td_api::make_object<td::td_api::formattedText>();
     formatted->text_ = text;
     content->text_ = std::move(formatted);
     content->disable_web_page_preview_ = false;
     content->clear_draft_ = false;
-    auto send = td::td_api::make_object<td::td_api::sendMessage>();
-    send->chat_id_ = chatId;
-    send->input_message_content_ = std::move(content);
-    if (replyToMessageId > 0) {
-        send->reply_to_message_id_ = replyToMessageId;
-    }
-    sendRequest(std::move(send),
-                [chatId](td::td_api::object_ptr<td::td_api::Object> sendResult) {
-                    if (sendResult->get_id() == td::td_api::error::ID) {
-                        auto err = downcast<td::td_api::error>(sendResult);
-                        Logger::warn("failed to send message: " + err->message_, 0, chatId);
+    sendMessageContent(
+        chatId, std::move(content), replyToMessageId,
+        [chatId, onSent = std::move(onSent)](td::td_api::object_ptr<td::td_api::Object> result) {
+            int64_t sentMessageId = 0;
+            if (result->get_id() == td::td_api::error::ID) {
+                auto err = downcast<td::td_api::error>(result);
+                Logger::warn("failed to send message: " + err->message_, 0, chatId);
+            } else {
+                sentMessageId = downcast<td::td_api::message>(result)->id_;
+            }
+            if (onSent) {
+                onSent(sentMessageId);
+            }
+        });
+}
+
+void TdlibClient::editMessageText(int64_t chatId, int64_t messageId, const std::string& text) {
+    auto content = td::td_api::make_object<td::td_api::inputMessageText>();
+    auto formatted = td::td_api::make_object<td::td_api::formattedText>();
+    formatted->text_ = text;
+    content->text_ = std::move(formatted);
+    content->disable_web_page_preview_ = false;
+    content->clear_draft_ = false;
+    auto req = td::td_api::make_object<td::td_api::editMessageText>();
+    req->chat_id_ = chatId;
+    req->message_id_ = messageId;
+    req->input_message_content_ = std::move(content);
+    sendRequest(std::move(req),
+                [chatId](td::td_api::object_ptr<td::td_api::Object> result) {
+                    if (result->get_id() == td::td_api::error::ID) {
+                        auto err = downcast<td::td_api::error>(result);
+                        Logger::warn("failed to edit message: " + err->message_, 0, chatId);
                     }
                 });
 }
@@ -127,31 +200,25 @@ void TdlibClient::sendDocument(int64_t chatId, const std::string& filePath,
     auto content = td::td_api::make_object<td::td_api::inputMessageDocument>();
     content->document_ = std::move(file);
     content->disable_content_type_detection_ = false;
-    auto send = td::td_api::make_object<td::td_api::sendMessage>();
-    send->chat_id_ = chatId;
-    send->input_message_content_ = std::move(content);
-    if (replyToMessageId > 0) {
-        send->reply_to_message_id_ = replyToMessageId;
-    }
     // TDLib returns the created message immediately, before the file upload
     // has finished (MessagesManager::send_message returns synchronously), so
     // the temp file must NOT be removed here. It is registered by its temporary
     // (negative) message id and deleted later, when the upload outcome arrives
     // as updateMessageSendSucceeded / updateMessageSendFailed / updateDeleteMessages.
-    sendRequest(std::move(send),
-                [this, chatId, filePath](td::td_api::object_ptr<td::td_api::Object> sendResult) {
-                    if (sendResult->get_id() == td::td_api::error::ID) {
-                        auto err = downcast<td::td_api::error>(sendResult);
-                        Logger::warn("failed to send document: " + err->message_, 0, chatId);
-                        std::error_code ec;
-                        std::filesystem::remove(filePath, ec);
-                        std::filesystem::remove(std::filesystem::path(filePath).parent_path(), ec);
-                        return;
-                    }
-                    auto msg = downcast<td::td_api::message>(sendResult);
-                    std::lock_guard<std::mutex> lock(pendingDocsMutex_);
-                    pendingDocuments_[{chatId, msg->id_}] = PendingDocument{chatId, filePath};
-                });
+    auto callback = [this, chatId, filePath](td::td_api::object_ptr<td::td_api::Object> sendResult) {
+        if (sendResult->get_id() == td::td_api::error::ID) {
+            auto err = downcast<td::td_api::error>(sendResult);
+            Logger::warn("failed to send document: " + err->message_, 0, chatId);
+            std::error_code ec;
+            std::filesystem::remove(filePath, ec);
+            std::filesystem::remove(std::filesystem::path(filePath).parent_path(), ec);
+            return;
+        }
+        auto msg = downcast<td::td_api::message>(sendResult);
+        std::lock_guard<std::mutex> lock(pendingDocsMutex_);
+        pendingDocuments_[{chatId, msg->id_}] = PendingDocument{chatId, filePath};
+    };
+    sendMessageContent(chatId, std::move(content), replyToMessageId, std::move(callback));
 }
 
 void TdlibClient::resolveUsername(const std::string& username,
@@ -316,46 +383,55 @@ void TdlibClient::removePendingDocument(int64_t chatId, int64_t messageId) {
     std::filesystem::remove(std::filesystem::path(pending.path).parent_path(), ec);
 }
 
+void TdlibClient::deliverNewMessage(td::td_api::object_ptr<td::td_api::message> message) {
+    if (messageHandler_) {
+        messageHandler_(std::move(message));
+    }
+}
+
+void TdlibClient::handleDocumentSendFailure(
+    td::td_api::object_ptr<td::td_api::updateMessageSendFailed> update) {
+    const int64_t chatId = chat_id_of(update->message_);
+    Logger::warn("document send failed: " + update->error_message_, 0, chatId);
+    removePendingDocument(chatId, update->old_message_id_);
+    if (update->message_) {
+        removePendingDocument(chatId, update->message_->id_);
+    }
+}
+
+void TdlibClient::handleDeletedMessages(
+    td::td_api::object_ptr<td::td_api::updateDeleteMessages> update) {
+    // A sending file message can be irrecoverably deleted instead of
+    // producing updateMessageSendFailed; clean up the temp file if one
+    // of the deleted messages is a pending document of ours.
+    for (const auto messageId : update->message_ids_) {
+        removePendingDocument(update->chat_id_, messageId);
+    }
+}
+
 void TdlibClient::processUpdate(td::td_api::object_ptr<td::td_api::Object> update) {
     switch (update->get_id()) {
         case td::td_api::updateAuthorizationState::ID: {
-            auto updateAuth = downcast<td::td_api::updateAuthorizationState>(update);
-            processAuthorizationState(std::move(updateAuth->authorization_state_));
+            auto auth = downcast<td::td_api::updateAuthorizationState>(update);
+            processAuthorizationState(std::move(auth->authorization_state_));
             break;
         }
         case td::td_api::updateNewMessage::ID: {
-            auto updateMessage = downcast<td::td_api::updateNewMessage>(update);
-            if (messageHandler_) {
-                messageHandler_(std::move(updateMessage->message_));
-            }
+            auto message = downcast<td::td_api::updateNewMessage>(update);
+            deliverNewMessage(std::move(message->message_));
             break;
         }
         case td::td_api::updateMessageSendSucceeded::ID: {
-            auto updateOk = downcast<td::td_api::updateMessageSendSucceeded>(update);
-            const int64_t chatId = updateOk->message_ ? updateOk->message_->chat_id_ : 0;
-            removePendingDocument(chatId, updateOk->old_message_id_);
+            auto ok = downcast<td::td_api::updateMessageSendSucceeded>(update);
+            removePendingDocument(chat_id_of(ok->message_), ok->old_message_id_);
             break;
         }
-        case td::td_api::updateMessageSendFailed::ID: {
-            auto updateFail = downcast<td::td_api::updateMessageSendFailed>(update);
-            const int64_t chatId = updateFail->message_ ? updateFail->message_->chat_id_ : 0;
-            Logger::warn("document send failed: " + updateFail->error_message_, 0, chatId);
-            removePendingDocument(chatId, updateFail->old_message_id_);
-            if (updateFail->message_) {
-                removePendingDocument(chatId, updateFail->message_->id_);
-            }
+        case td::td_api::updateMessageSendFailed::ID:
+            handleDocumentSendFailure(downcast<td::td_api::updateMessageSendFailed>(update));
             break;
-        }
-        case td::td_api::updateDeleteMessages::ID: {
-            // A sending file message can be irrecoverably deleted instead of
-            // producing updateMessageSendFailed; clean up the temp file if one
-            // of the deleted messages is a pending document of ours.
-            auto updateDelete = downcast<td::td_api::updateDeleteMessages>(update);
-            for (const auto messageId : updateDelete->message_ids_) {
-                removePendingDocument(updateDelete->chat_id_, messageId);
-            }
+        case td::td_api::updateDeleteMessages::ID:
+            handleDeletedMessages(downcast<td::td_api::updateDeleteMessages>(update));
             break;
-        }
         default:
             break;
     }
@@ -365,61 +441,29 @@ void TdlibClient::processAuthorizationState(td::td_api::object_ptr<td::td_api::O
     switch (state->get_id()) {
         case td::td_api::authorizationStateWaitTdlibParameters::ID: {
             Logger::info("tdlib auth: waiting for parameters");
-            auto params = td::td_api::make_object<td::td_api::tdlibParameters>();
-            params->use_test_dc_ = false;
-            params->api_id_ = apiId_;
-            params->api_hash_ = apiHash_;
-            params->database_directory_ = "/tmp/tdlib";
-            params->files_directory_ = "/tmp/tdlib";
-            params->use_file_database_ = false;
-            params->use_chat_info_database_ = true;
-            params->use_message_database_ = false;
-            params->use_secret_chats_ = false;
-            params->system_language_code_ = "en";
-            params->device_model_ = "PiBot Core";
-            params->system_version_ = "linux";
-            params->application_version_ = "1.0.0";
-            params->enable_storage_optimizer_ = true;
-            params->ignore_file_names_ = false;
-            sendRequestImpl(td::td_api::make_object<td::td_api::setTdlibParameters>(std::move(params)),
-                            [](td::td_api::object_ptr<td::td_api::Object> result) {
-                                if (result->get_id() == td::td_api::error::ID) {
-                                    auto err = downcast<td::td_api::error>(result);
-                                    Logger::error("tdlib: setTdlibParameters failed: " + err->message_);
-                                }
-                            });
+            sendRequestImpl(td::td_api::make_object<td::td_api::setTdlibParameters>(
+                                make_tdlib_parameters(apiId_, apiHash_)),
+                            log_error_callback("tdlib: setTdlibParameters failed: "));
             break;
         }
         case td::td_api::authorizationStateWaitPhoneNumber::ID: {
             Logger::info("tdlib auth: waiting for phone number, sending bot token");
             sendRequestImpl(td::td_api::make_object<td::td_api::checkAuthenticationBotToken>(token_),
-                            [](td::td_api::object_ptr<td::td_api::Object> result) {
-                                if (result->get_id() == td::td_api::error::ID) {
-                                    auto err = downcast<td::td_api::error>(result);
-                                    Logger::error("tdlib: bot token rejected: " + err->message_);
-                                }
-                            });
+                            log_error_callback("tdlib: bot token rejected: "));
             break;
         }
-        case td::td_api::authorizationStateWaitEncryptionKey::ID: {
-            sendRequestImpl(td::td_api::make_object<td::td_api::setDatabaseEncryptionKey>(std::string()),
-                            [](td::td_api::object_ptr<td::td_api::Object> result) {
-                                if (result->get_id() == td::td_api::error::ID) {
-                                    auto err = downcast<td::td_api::error>(result);
-                                    Logger::error("tdlib: setDatabaseEncryptionKey failed: " + err->message_);
-                                }
-                            });
+        case td::td_api::authorizationStateWaitEncryptionKey::ID:
+            sendRequestImpl(
+                td::td_api::make_object<td::td_api::setDatabaseEncryptionKey>(std::string()),
+                log_error_callback("tdlib: setDatabaseEncryptionKey failed: "));
             break;
-        }
-        case td::td_api::authorizationStateReady::ID: {
+        case td::td_api::authorizationStateReady::ID:
             authorized_.store(true);
             Logger::info("tdlib authorized");
             break;
-        }
-        case td::td_api::authorizationStateClosed::ID: {
+        case td::td_api::authorizationStateClosed::ID:
             Logger::warn("tdlib authorization closed");
             break;
-        }
         default:
             break;
     }

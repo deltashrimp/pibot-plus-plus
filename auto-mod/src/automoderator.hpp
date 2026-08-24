@@ -20,6 +20,10 @@ struct Action {
     bool delete_message;   // true if the message should be deleted
 };
 
+// String form of an action type: "Allow", "MuteTemporary" or "MutePermanent".
+// Shared by the moderator's structured logs and the HTTP API responses.
+const char* action_type_to_string(ActionType type);
+
 // Reusable, thread-safe auto-moderation module.
 //
 // Implements two independent checks, in order:

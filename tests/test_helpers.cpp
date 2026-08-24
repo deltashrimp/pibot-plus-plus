@@ -15,7 +15,9 @@ using helpers::mentionUser;
 using helpers::parseDuration;
 using helpers::parseInt;
 using helpers::parseLogLevel;
+using helpers::sanitizeForAi;
 using helpers::splitCommand;
+using helpers::truncateUtf8;
 using helpers::unixNow;
 
 TEST(SplitCommandTest, EmptyStringYieldsNoTokens) {
@@ -138,6 +140,60 @@ TEST(UnixNowTest, MatchesSystemClockWithinTolerance) {
     const int64_t got = unixNow();
     EXPECT_GE(got, now - 5);
     EXPECT_LE(got, now + 5);
+}
+
+TEST(SanitizeForAiTest, CleanTextPassesThrough) {
+    EXPECT_EQ(sanitizeForAi("Привет, как дела?"), "Привет, как дела?");
+    EXPECT_EQ(sanitizeForAi("Tickets are $40!"), "Tickets are $40!");
+    EXPECT_EQ(sanitizeForAi(""), "");
+}
+
+TEST(SanitizeForAiTest, StripsCombiningMarksZalgo) {
+    // Latin 'e' + combining acute + combining diaeresis below.
+    EXPECT_EQ(sanitizeForAi("e\u0301\u0324"), "e");
+    // Cyrillic 'и' + combining acute (frequent zalgo trick in RU spam).
+    EXPECT_EQ(sanitizeForAi("и\u0301"), "и");
+    // Stacked zalgo mess collapses to the base letters.
+    EXPECT_EQ(sanitizeForAi("z\u0358\u0316\u0353a\u0340\u033Fl"), "zal");
+}
+
+TEST(SanitizeForAiTest, StripsZeroWidthAndBidiCharacters) {
+    EXPECT_EQ(sanitizeForAi("a\u200bb\u200Bc"), "abc");
+    EXPECT_EQ(sanitizeForAi("hid\u202Ee me"), "hide me");  // bidi override
+    EXPECT_EQ(sanitizeForAi("x\uFEFFy\u2060z"), "xyz");
+}
+
+TEST(SanitizeForAiTest, KeepsNewlinesDropsOtherControls) {
+    EXPECT_EQ(sanitizeForAi("line1\r\nline2\x01\x07ok\x7F"), "line1\nline2ok");
+}
+
+TEST(SanitizeForAiTest, KeepsEmojiAndRegularSymbols) {
+    EXPECT_EQ(sanitizeForAi("\xF0\x9F\x9F\xA1 \xD0\x98\xD0\x98 ok"),
+              "\xF0\x9F\x9F\xA1 \xD0\x98\xD0\x98 ok");
+}
+
+TEST(SanitizeForAiTest, DropsMalformedUtf8Bytes) {
+    EXPECT_EQ(sanitizeForAi("ok\xFF!"), "ok!");
+    EXPECT_EQ(sanitizeForAi("a\xC3(b"), "a(b");  // lone lead byte
+}
+
+TEST(TruncateUtf8Test, ShorterThanLimitIsUnchanged) {
+    EXPECT_EQ(truncateUtf8("привет", 100), "привет");
+    EXPECT_EQ(truncateUtf8("", 5), "");
+}
+
+TEST(TruncateUtf8Test, AsciiCutAtExactLimit) {
+    EXPECT_EQ(truncateUtf8("abcdef", 3), "abc");
+}
+
+TEST(TruncateUtf8Test, NeverSplitsMultibyteCharacters) {
+    // Each 'ж' is 2 bytes: limit of 5 must keep 2 full chars (4 bytes).
+    EXPECT_EQ(truncateUtf8("жжж", 5), "жж");
+    // Each emoji is 4 bytes: limit of 6 keeps exactly one.
+    EXPECT_EQ(truncateUtf8("\xF0\x9F\x9F\xA1\xF0\x9F\x9F\xA1", 6),
+              "\xF0\x9F\x9F\xA1");
+    // Exact boundary is kept.
+    EXPECT_EQ(truncateUtf8("жж", 4), "жж");
 }
 
 }  // namespace

@@ -30,6 +30,33 @@ constexpr int kMuteDurationSeconds = 60;    // temporary mute length
 // without doing work on every single call.
 constexpr size_t kTrackedCap = 4096;
 
+// Lower-case fold of an upper-case Cyrillic letter encoded as a 0xD0-prefixed
+// two-byte UTF-8 sequence with continuation byte c2. Appends the fold to out
+// and returns true, or leaves out untouched and returns false when the pair is
+// not А-Я/Ё.
+bool append_lower_cyrillic(std::string& out, unsigned char c2) {
+    if (c2 >= 0x90 && c2 <= 0xAF) {
+        // U+0410..U+042F (А-Я) -> U+0430..U+044F (а-я).
+        if (c2 <= 0x9F) {
+            // а-п: 0xD0 0xB0..0xBF.
+            out.push_back(static_cast<char>(0xD0));
+            out.push_back(static_cast<char>(c2 + 0x20));
+        } else {
+            // р-я: 0xD1 0x80..0x8F.
+            out.push_back(static_cast<char>(0xD1));
+            out.push_back(static_cast<char>(c2 - 0x20));
+        }
+        return true;
+    }
+    if (c2 == 0x81) {
+        // Ё (U+0401) -> ё (U+0451).
+        out.push_back(static_cast<char>(0xD1));
+        out.push_back(static_cast<char>(0x91));
+        return true;
+    }
+    return false;
+}
+
 // Fold the text to lower case. The result is byte-identical for lower-case
 // input, so repeated folding is harmless.
 //
@@ -50,24 +77,7 @@ std::string to_lower_utf8(const std::string& s) {
         if (c == 0xD0 && i + 1 < s.size()) {
             // Two-byte UTF-8 sequence, Cyrillic range.
             unsigned char c2 = static_cast<unsigned char>(s[i + 1]);
-            if (c2 >= 0x90 && c2 <= 0xAF) {
-                // U+0410..U+042F (А-Я) -> U+0430..U+044F (а-я).
-                if (c2 <= 0x9F) {
-                    // а-п: 0xD0 0xB0..0xBF.
-                    out.push_back(static_cast<char>(0xD0));
-                    out.push_back(static_cast<char>(c2 + 0x20));
-                } else {
-                    // р-я: 0xD1 0x80..0x8F.
-                    out.push_back(static_cast<char>(0xD1));
-                    out.push_back(static_cast<char>(c2 - 0x20));
-                }
-                ++i;
-                continue;
-            }
-            if (c2 == 0x81) {
-                // Ё (U+0401) -> ё (U+0451).
-                out.push_back(static_cast<char>(0xD1));
-                out.push_back(static_cast<char>(0x91));
+            if (append_lower_cyrillic(out, c2)) {
                 ++i;
                 continue;
             }
@@ -82,28 +92,41 @@ std::string to_lower_utf8(const std::string& s) {
     return out;
 }
 
+// JSON escape sequence per byte value, nullptr when the byte needs no escape.
+constexpr std::array<const char*, 256> kJsonEscapes = [] {
+    std::array<const char*, 256> table{};
+    table[static_cast<unsigned char>('"')] = "\\\"";
+    table[static_cast<unsigned char>('\\')] = "\\\\";
+    table[static_cast<unsigned char>('\n')] = "\\n";
+    table[static_cast<unsigned char>('\r')] = "\\r";
+    table[static_cast<unsigned char>('\t')] = "\\t";
+    return table;
+}();
+
+// Append one byte of a string in its JSON string-literal form to out:
+// named escapes for the special characters, \u00XX for other control bytes,
+// the byte itself otherwise.
+void append_json_escaped(std::string& out, unsigned char c) {
+    if (const char* escaped = kJsonEscapes[c]) {
+        out += escaped;
+        return;
+    }
+    if (c >= 0x20) {
+        out.push_back(static_cast<char>(c));
+        return;
+    }
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
+    out += buf;
+}
+
 // Escape a string for inclusion inside a JSON string literal.
 std::string json_escape(const std::string& s) {
     std::string out;
     out.reserve(s.size() + 2);
     out.push_back('"');
     for (char ch : s) {
-        unsigned char c = static_cast<unsigned char>(ch);
-        switch (c) {
-            case '"': out += "\\\""; break;
-            case '\\': out += "\\\\"; break;
-            case '\n': out += "\\n"; break;
-            case '\r': out += "\\r"; break;
-            case '\t': out += "\\t"; break;
-            default:
-                if (c < 0x20) {
-                    char buf[8];
-                    std::snprintf(buf, sizeof(buf), "\\u%04x", c);
-                    out += buf;
-                } else {
-                    out.push_back(static_cast<char>(c));
-                }
-        }
+        append_json_escaped(out, static_cast<unsigned char>(ch));
     }
     out.push_back('"');
     return out;
@@ -120,15 +143,6 @@ std::string message_preview(const std::string& text, size_t max_bytes = 50) {
         --end;
     }
     return text.substr(0, end);
-}
-
-const char* action_type_to_string(ActionType type) {
-    switch (type) {
-        case ActionType::Allow: return "Allow";
-        case ActionType::MuteTemporary: return "MuteTemporary";
-        case ActionType::MutePermanent: return "MutePermanent";
-    }
-    return "Allow";
 }
 
 // Emit a structured JSON log line for every decision. The payload starts with
@@ -172,6 +186,15 @@ void log_decision(int64_t chat_id, int64_t user_id, const std::string& text,
 }
 
 }  // namespace
+
+const char* action_type_to_string(ActionType type) {
+    switch (type) {
+        case ActionType::Allow: return "Allow";
+        case ActionType::MuteTemporary: return "MuteTemporary";
+        case ActionType::MutePermanent: return "MutePermanent";
+    }
+    return "Allow";
+}
 
 Action AutoModerator::process_message(int64_t chat_id, int64_t user_id,
                                       const std::string& text,
