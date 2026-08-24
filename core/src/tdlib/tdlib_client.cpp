@@ -180,13 +180,11 @@ void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
                 return;
             }
             Logger::info("text send ack", 0, chatId, "id=" + std::to_string(sentId));
-            if (sentId > 0) {
-                // Already the final, server-assigned id.
-                onSent(sentId);
-                return;
-            }
-            // Outgoing messages start with a temporary negative id; the real
-            // one arrives later via updateMessageSendSucceeded.
+            // Deliver the id only after updateMessageSendSucceeded confirms
+            // the send. Even when TDLib pre-assigns the final positive id
+            // (supergroups), the message stays in messageSendingStatePending
+            // for a moment, and editing it that early fails with
+            // "Message can't be edited".
             std::lock_guard<std::mutex> lock(pendingSendsMutex_);
             pendingTextSends_[{chatId, sentId}] = std::move(onSent);
         });
