@@ -264,9 +264,21 @@ RpTarget classifyRpTarget(const std::string& targetToken) {
     return target;
 }
 
-using CommandAction = void (ModerationCommands::*)(const CommandContext&);
+}  // namespace
 
-const std::unordered_map<std::string, CommandAction>& commandTable() {
+ModerationCommands::ModerationCommands(std::shared_ptr<TdlibClient> tdlib,
+                                       std::shared_ptr<DbManager> db,
+                                       std::shared_ptr<rp::RpClient> rpClient,
+                                       std::shared_ptr<tools::ToolsClient> toolsClient,
+                                       std::shared_ptr<ai::AiClient> aiClient)
+    : tdlib_(std::move(tdlib)),
+      db_(std::move(db)),
+      rpClient_(std::move(rpClient)),
+      toolsClient_(std::move(toolsClient)),
+      aiClient_(std::move(aiClient)) {}
+
+const std::unordered_map<std::string, ModerationCommands::CommandAction>&
+ModerationCommands::commandTable() {
     static const std::unordered_map<std::string, CommandAction> table = {
         {"start", &ModerationCommands::executeStart},
         {"mute", &ModerationCommands::executeMute},
@@ -287,19 +299,6 @@ const std::unordered_map<std::string, CommandAction>& commandTable() {
     };
     return table;
 }
-
-}  // namespace
-
-ModerationCommands::ModerationCommands(std::shared_ptr<TdlibClient> tdlib,
-                                       std::shared_ptr<DbManager> db,
-                                       std::shared_ptr<rp::RpClient> rpClient,
-                                       std::shared_ptr<tools::ToolsClient> toolsClient,
-                                       std::shared_ptr<ai::AiClient> aiClient)
-    : tdlib_(std::move(tdlib)),
-      db_(std::move(db)),
-      rpClient_(std::move(rpClient)),
-      toolsClient_(std::move(toolsClient)),
-      aiClient_(std::move(aiClient)) {}
 
 bool ModerationCommands::canHandle(const std::string& command) const {
     return commandTable().count(command) > 0;

@@ -39,6 +39,12 @@ private:
     // one command per user per second.
     bool allowCommand(int64_t senderId);
 
+    using CommandAction = void (ModerationCommands::*)(const CommandContext&);
+    // Command -> handler dispatch table shared by canHandle() and handle().
+    // A static member (not a file-local helper) so it can form pointers to
+    // the private execute* handlers.
+    static const std::unordered_map<std::string, CommandAction>& commandTable();
+
     using ErrorReplier = std::function<void(const std::string&)>;
     using TargetAction = std::function<void(int64_t targetId)>;
 
