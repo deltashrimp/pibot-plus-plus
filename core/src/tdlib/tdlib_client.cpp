@@ -179,6 +179,7 @@ void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
             if (!onSent) {
                 return;
             }
+            Logger::info("text send ack", 0, chatId, "id=" + std::to_string(sentId));
             if (sentId > 0) {
                 // Already the final, server-assigned id.
                 onSent(sentId);
@@ -191,16 +192,24 @@ void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
         });
 }
 
-void TdlibClient::editMessageText(int64_t chatId, int64_t messageId, const std::string& text) {
+void TdlibClient::editMessageText(int64_t chatId, int64_t messageId, const std::string& text,
+                                  std::function<void(bool ok)> onDone) {
     auto req = td::td_api::make_object<td::td_api::editMessageText>();
     req->chat_id_ = chatId;
     req->message_id_ = messageId;
     req->input_message_content_ = makePlainTextContent(text);
     sendRequest(std::move(req),
-                [chatId](td::td_api::object_ptr<td::td_api::Object> result) {
-                    if (result->get_id() == td::td_api::error::ID) {
+                [chatId, messageId, onDone = std::move(onDone)](
+                    td::td_api::object_ptr<td::td_api::Object> result) {
+                    const bool ok = result->get_id() != td::td_api::error::ID;
+                    if (!ok) {
                         auto err = downcast<td::td_api::error>(result);
-                        Logger::warn("failed to edit message: " + err->message_, 0, chatId);
+                        Logger::warn("failed to edit message " + std::to_string(messageId) +
+                                         ": " + err->message_,
+                                     0, chatId);
+                    }
+                    if (onDone) {
+                        onDone(ok);
                     }
                 });
 }
@@ -413,6 +422,9 @@ void TdlibClient::settlePendingSend(int64_t chatId, int64_t tempMessageId,
         onSent = std::move(it->second);
         pendingTextSends_.erase(it);
     }
+    Logger::info("text send settled", 0, chatId,
+                 "temp=" + std::to_string(tempMessageId) +
+                     " final=" + std::to_string(confirmedMessageId));
     // Invoke outside the lock: callbacks may re-enter TdlibClient.
     onSent(confirmedMessageId);
 }

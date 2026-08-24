@@ -1007,8 +1007,18 @@ void ModerationCommands::replaceAiPlaceholder(const CommandContext& context,
         tdlib_->sendTextPlain(context.chat_id, text, context.message_id);
         return;
     }
-    tdlib_->editMessageText(context.chat_id, placeholderMessageId,
-                            helpers::truncateUtf8(text, kMaxTelegramMessageBytes));
+    tdlib_->editMessageText(
+        context.chat_id, placeholderMessageId,
+        helpers::truncateUtf8(text, kMaxTelegramMessageBytes),
+        [this, context, text](bool ok) {
+            if (!ok) {
+                // The placeholder vanished (deleted or id never confirmed);
+                // the answer must still reach the chat.
+                Logger::warn("placeholder edit failed, replying fresh",
+                             context.sender_id, context.chat_id, "");
+                tdlib_->sendTextPlain(context.chat_id, text, context.message_id);
+            }
+        });
 }
 
 void ModerationCommands::executeStart(const CommandContext& context) {

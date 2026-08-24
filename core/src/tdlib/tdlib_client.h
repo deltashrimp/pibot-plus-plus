@@ -33,8 +33,10 @@ public:
     // once TDLib confirms the send (0 on failure).
     void sendTextPlain(int64_t chatId, const std::string& text, int64_t replyToMessageId,
                        std::function<void(int64_t sentMessageId)> onSent);
-    // Replaces the plain-text content of an already sent message.
-    void editMessageText(int64_t chatId, int64_t messageId, const std::string& text);
+    // Replaces the plain-text content of an already sent message. Reports
+    // success/failure via onDone when provided.
+    void editMessageText(int64_t chatId, int64_t messageId, const std::string& text,
+                         std::function<void(bool ok)> onDone = nullptr);
 
     // Uploads and sends a local file as a document to the chat. The temporary
     // local copy is removed only after the upload actually completes (tracked
