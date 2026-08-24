@@ -18,6 +18,18 @@ int64_t chat_id_of(const td::td_api::object_ptr<td::td_api::message>& message) {
     return message ? message->chat_id_ : 0;
 }
 
+// Plain-text message content shared by sendTextPlain / editMessageText.
+td::td_api::object_ptr<td::td_api::InputMessageContent> makePlainTextContent(
+    const std::string& text) {
+    auto content = td::td_api::make_object<td::td_api::inputMessageText>();
+    auto formatted = td::td_api::make_object<td::td_api::formattedText>();
+    formatted->text_ = text;
+    content->text_ = std::move(formatted);
+    content->disable_web_page_preview_ = false;
+    content->clear_draft_ = false;
+    return content;
+}
+
 // TDLib parameters for the bot's local database, as expected by
 // authorizationStateWaitTdlibParameters.
 td::td_api::object_ptr<td::td_api::tdlibParameters> make_tdlib_parameters(
@@ -151,39 +163,39 @@ void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
 void TdlibClient::sendTextPlain(int64_t chatId, const std::string& text,
                                 int64_t replyToMessageId,
                                 std::function<void(int64_t sentMessageId)> onSent) {
-    auto content = td::td_api::make_object<td::td_api::inputMessageText>();
-    auto formatted = td::td_api::make_object<td::td_api::formattedText>();
-    formatted->text_ = text;
-    content->text_ = std::move(formatted);
-    content->disable_web_page_preview_ = false;
-    content->clear_draft_ = false;
     sendMessageContent(
-        chatId, std::move(content), replyToMessageId,
-        [chatId, onSent = std::move(onSent)](td::td_api::object_ptr<td::td_api::Object> result) {
-            int64_t sentMessageId = 0;
+        chatId, makePlainTextContent(text), replyToMessageId,
+        [this, chatId, onSent = std::move(onSent)](
+            td::td_api::object_ptr<td::td_api::Object> result) {
             if (result->get_id() == td::td_api::error::ID) {
                 auto err = downcast<td::td_api::error>(result);
                 Logger::warn("failed to send message: " + err->message_, 0, chatId);
-            } else {
-                sentMessageId = downcast<td::td_api::message>(result)->id_;
+                if (onSent) {
+                    onSent(0);
+                }
+                return;
             }
-            if (onSent) {
-                onSent(sentMessageId);
+            const int64_t sentId = downcast<td::td_api::message>(result)->id_;
+            if (!onSent) {
+                return;
             }
+            if (sentId > 0) {
+                // Already the final, server-assigned id.
+                onSent(sentId);
+                return;
+            }
+            // Outgoing messages start with a temporary negative id; the real
+            // one arrives later via updateMessageSendSucceeded.
+            std::lock_guard<std::mutex> lock(pendingSendsMutex_);
+            pendingTextSends_[{chatId, sentId}] = std::move(onSent);
         });
 }
 
 void TdlibClient::editMessageText(int64_t chatId, int64_t messageId, const std::string& text) {
-    auto content = td::td_api::make_object<td::td_api::inputMessageText>();
-    auto formatted = td::td_api::make_object<td::td_api::formattedText>();
-    formatted->text_ = text;
-    content->text_ = std::move(formatted);
-    content->disable_web_page_preview_ = false;
-    content->clear_draft_ = false;
     auto req = td::td_api::make_object<td::td_api::editMessageText>();
     req->chat_id_ = chatId;
     req->message_id_ = messageId;
-    req->input_message_content_ = std::move(content);
+    req->input_message_content_ = makePlainTextContent(text);
     sendRequest(std::move(req),
                 [chatId](td::td_api::object_ptr<td::td_api::Object> result) {
                     if (result->get_id() == td::td_api::error::ID) {
@@ -389,11 +401,28 @@ void TdlibClient::deliverNewMessage(td::td_api::object_ptr<td::td_api::message> 
     }
 }
 
+void TdlibClient::settlePendingSend(int64_t chatId, int64_t tempMessageId,
+                                    int64_t confirmedMessageId) {
+    std::function<void(int64_t)> onSent;
+    {
+        std::lock_guard<std::mutex> lock(pendingSendsMutex_);
+        auto it = pendingTextSends_.find({chatId, tempMessageId});
+        if (it == pendingTextSends_.end()) {
+            return;
+        }
+        onSent = std::move(it->second);
+        pendingTextSends_.erase(it);
+    }
+    // Invoke outside the lock: callbacks may re-enter TdlibClient.
+    onSent(confirmedMessageId);
+}
+
 void TdlibClient::handleDocumentSendFailure(
     td::td_api::object_ptr<td::td_api::updateMessageSendFailed> update) {
     const int64_t chatId = chat_id_of(update->message_);
     Logger::warn("document send failed: " + update->error_message_, 0, chatId);
     removePendingDocument(chatId, update->old_message_id_);
+    settlePendingSend(chatId, update->old_message_id_, 0);
     if (update->message_) {
         removePendingDocument(chatId, update->message_->id_);
     }
@@ -403,9 +432,11 @@ void TdlibClient::handleDeletedMessages(
     td::td_api::object_ptr<td::td_api::updateDeleteMessages> update) {
     // A sending file message can be irrecoverably deleted instead of
     // producing updateMessageSendFailed; clean up the temp file if one
-    // of the deleted messages is a pending document of ours.
+    // of the deleted messages is a pending document of ours. Tracked text
+    // sends are settled as failed so their callers can fall back.
     for (const auto messageId : update->message_ids_) {
         removePendingDocument(update->chat_id_, messageId);
+        settlePendingSend(update->chat_id_, messageId, 0);
     }
 }
 
@@ -423,7 +454,10 @@ void TdlibClient::processUpdate(td::td_api::object_ptr<td::td_api::Object> updat
         }
         case td::td_api::updateMessageSendSucceeded::ID: {
             auto ok = downcast<td::td_api::updateMessageSendSucceeded>(update);
-            removePendingDocument(chat_id_of(ok->message_), ok->old_message_id_);
+            const int64_t chatId = chat_id_of(ok->message_);
+            removePendingDocument(chatId, ok->old_message_id_);
+            settlePendingSend(chatId, ok->old_message_id_,
+                              ok->message_ ? ok->message_->id_ : 0);
             break;
         }
         case td::td_api::updateMessageSendFailed::ID:

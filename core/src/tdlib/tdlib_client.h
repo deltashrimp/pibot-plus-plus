@@ -78,6 +78,11 @@ private:
     void handleDocumentSendFailure(
         td::td_api::object_ptr<td::td_api::updateMessageSendFailed> update);
     void handleDeletedMessages(td::td_api::object_ptr<td::td_api::updateDeleteMessages> update);
+    // Delivers a sendTextPlain onSent callback once its send settles:
+    // confirmedMessageId > 0 after updateMessageSendSucceeded, 0 on failure
+    // or when the message was deleted meanwhile.
+    void settlePendingSend(int64_t chatId, int64_t tempMessageId,
+                           int64_t confirmedMessageId);
     void loop();
 
     // Removes the temp file registered for a sending document and its parent
@@ -105,6 +110,10 @@ private:
     // the send of that message completes. Local message ids are only unique
     // per chat, hence the (chat_id, message_id) key.
     std::map<std::pair<int64_t, int64_t>, PendingDocument> pendingDocuments_;
+    std::mutex pendingSendsMutex_;
+    // Temporary (negative) message id -> caller waiting for the server
+    // confirmed id of a plain-text send (sendTextPlain's onSent overload).
+    std::map<std::pair<int64_t, int64_t>, std::function<void(int64_t)>> pendingTextSends_;
 };
 
 #endif
