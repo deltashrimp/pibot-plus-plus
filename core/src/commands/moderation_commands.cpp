@@ -655,7 +655,7 @@ void ModerationCommands::sendChatRanksReport(const CommandContext& context) {
 }
 
 void ModerationCommands::executeRanks(const CommandContext& context) {
-    requireRank(context, 3,
+    requireRank(context, 4,
                 [this, context] { sendChatRanksReport(context); },
                 replier(context));
 }
@@ -886,7 +886,7 @@ void ModerationCommands::executeGClone(const CommandContext& context) {
 }
 
 void ModerationCommands::executeAi(const CommandContext& context) {
-    requireRank(context, 1,
+    requireRank(context, 4,
                 [this, context] {
                     const std::string question = helpers::sanitizeForAi(context.raw_args);
                     if (question.empty()) {
