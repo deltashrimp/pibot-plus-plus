@@ -4,7 +4,7 @@
 
 api-key: "${GROQ_API_KEY}"
 api-url: "https://api.groq.com/openai/v1/chat/completions"
-model: "meta-llama/llama-prompt-guard-2-22m"
+model: "openai/gpt-oss-120b"
 
 # Rules and bio are inserted into the AI's system prompt. To load them from disk,
 # use "file:/absolute/path" (relative paths resolve against the working dir). The
