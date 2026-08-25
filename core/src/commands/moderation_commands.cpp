@@ -14,6 +14,7 @@
 #include <system_error>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "database/db_manager.h"
@@ -103,6 +104,17 @@ std::string rankLabel(int rank) {
         default:
             return "участник";
     }
+}
+
+// Dev-only (rank 0) commands listed by /devc; keep in sync with
+// commandTable() and the requireRank(..., 0, ...) call sites.
+const std::vector<std::pair<const char*, const char*>>& devCommandList() {
+    static const std::vector<std::pair<const char*, const char*>> commands = {
+        {"devc", "список dev-команд"},
+        {"globalban <цель>", "добавить пользователя в глобальный бан"},
+        {"globalunban <цель>", "убрать пользователя из глобального бана"},
+    };
+    return commands;
 }
 
 // First command argument, empty when there is none.
@@ -288,6 +300,7 @@ ModerationCommands::commandTable() {
         {"unban", &ModerationCommands::executeUnban},
         {"globalban", &ModerationCommands::executeGlobalBan},
         {"globalunban", &ModerationCommands::executeGlobalUnban},
+        {"devc", &ModerationCommands::executeDevCommands},
         {"rank", &ModerationCommands::executeRank},
         {"ranks", &ModerationCommands::executeRanks},
         {"rpadd", &ModerationCommands::executeRpAdd},
@@ -565,6 +578,19 @@ void ModerationCommands::executeGlobalUnban(const CommandContext& context) {
                                   replier(context));
                 },
                 replier(context));
+}
+
+void ModerationCommands::executeDevCommands(const CommandContext& context) {
+    requireRank(
+        context, 0,
+        [this, context] {
+            std::string text = "Dev-команды:\n";
+            for (const auto& [command, description] : devCommandList()) {
+                text += std::string("/") + command + " - " + description + "\n";
+            }
+            tdlib_->sendTextPlain(context.chat_id, text, context.message_id);
+        },
+        replier(context));
 }
 
 void ModerationCommands::applyRankChange(const CommandContext& context, int newRank,

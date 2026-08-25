@@ -108,6 +108,8 @@ private:
     void executeUnban(const CommandContext& context);
     void executeGlobalBan(const CommandContext& context);
     void executeGlobalUnban(const CommandContext& context);
+    // Replies with the list of dev-only (rank 0) commands.
+    void executeDevCommands(const CommandContext& context);
     void executeRank(const CommandContext& context);
     void executeRanks(const CommandContext& context);
     void executeStart(const CommandContext& context);

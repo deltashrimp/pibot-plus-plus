@@ -56,8 +56,8 @@ public class Config {
                 rules == null ? 0 : rules.length(),
                 bio == null ? 0 : bio.length());
         return new com.isthisalis.ailib.api.Configuration(
-                envOr("OPENROUTER_API_KEY", base.getApiKey()),
-                envOr("OPENROUTER_API_URL", base.getApiUrl()),
+                envOr("GROQ_API_KEY", base.getApiKey()),
+                envOr("GROQ_API_URL", base.getApiUrl()),
                 envOr("AI_MODEL", base.getModel()),
                 rules,
                 bio);

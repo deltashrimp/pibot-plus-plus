@@ -124,6 +124,7 @@ to users who are not (their admin rights must first be removed manually).
 | `/unban < target >`      | owner (1) | Unban                                      |
 | `/globalban < target >`  | dev (0)  | Add to global ban list (all messages ignored) |
 | `/globalunban < target >`| dev (0)  | Remove from global ban list                |
+| `/devc`                  | dev (0)  | List all dev (rank 0) commands             |
 | `/rank < 2/ 3 / 4 > < target >` | owner/admin+ (1-2) | Set a user's rank; 2/3 require the target to already be a Telegram admin, 4 requires them not to be; rank 1 cannot be given (giving 2 requires owner). The bot never changes Telegram admin status — that is done manually |
 | `/ranks`               | admin (3) | List all users with ranks 1-3              |
 | `/rpadd < trigger > < response >` | owner (1) | Add an RP command (first word = trigger)   |
