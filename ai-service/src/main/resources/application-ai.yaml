@@ -2,7 +2,8 @@
 # api-url: "https://openrouter.ai/api/v1/chat/completions"
 # model: "liquid/lfm-2.5-2.6b:free"
 
-api-key: "${GROQ_API_KEY}"
+# CHANGE DA FREAKIN NAME BIH! - IsThisALis
+api-key: "$GROQ_API_KEY"
 api-url: "https://api.groq.com/openai/v1/chat/completions"
 model: "openai/gpt-oss-120b"
 
