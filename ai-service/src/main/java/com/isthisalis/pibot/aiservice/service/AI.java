@@ -1,7 +1,5 @@
 package com.isthisalis.pibot.aiservice.service;
 
-import java.io.IOException;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -43,13 +41,9 @@ public class AI {
     }
 
     /** No-op placeholder; providers will be (re)loaded from Core later. */
-    public void reloadConfig() throws RuntimeException {
-        try {
+    public void reloadConfig() {
             config = Config.reload();
             System.out.println(config.toString());
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
         this.ai = new AiCaller(config, null);
     }
 }
