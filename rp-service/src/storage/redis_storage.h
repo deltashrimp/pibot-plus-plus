@@ -33,6 +33,14 @@ public:
     // predefined commands without overwriting user customisations.
     bool addIfAbsent(int64_t chatId, const std::string& trigger, const std::string& response);
 
+    // True once the chat's RP command set has been initialised with the
+    // predefined defaults. Used to seed a fresh chat exactly once so that
+    // later edits/removals of a default command are never overwritten.
+    bool isSeeded(int64_t chatId);
+
+    // Records that the chat has been initialised with the predefined defaults.
+    void markSeeded(int64_t chatId);
+
     // Overwrites the response for an existing (or new) trigger.
     bool updateCommand(int64_t chatId, const std::string& trigger, const std::string& response);
 

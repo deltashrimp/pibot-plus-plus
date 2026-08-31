@@ -11,6 +11,7 @@
 namespace {
 
 const char* kKeyPrefix = "rp:commands:";
+const char* kSeededPrefix = "rp:seeded:";
 
 sw::redis::ConnectionOptions makeConnectionOptions(const std::string& host, uint16_t port) {
     sw::redis::ConnectionOptions opts;
@@ -44,6 +45,23 @@ RedisStorage::RedisStorage(std::string host, uint16_t port, size_t poolSize)
 
 std::string RedisStorage::keyFor(int64_t chatId) const {
     return std::string(kKeyPrefix) + std::to_string(chatId);
+}
+
+bool RedisStorage::isSeeded(int64_t chatId) {
+    try {
+        return redis_.exists(std::string(kSeededPrefix) + std::to_string(chatId)) != 0;
+    } catch (const sw::redis::Error& e) {
+        Logger::error("redis exists failed: " + redisError(e));
+        return false;
+    }
+}
+
+void RedisStorage::markSeeded(int64_t chatId) {
+    try {
+        redis_.set(std::string(kSeededPrefix) + std::to_string(chatId), "1");
+    } catch (const sw::redis::Error& e) {
+        Logger::error("redis set failed: " + redisError(e));
+    }
 }
 
 bool RedisStorage::ping() {

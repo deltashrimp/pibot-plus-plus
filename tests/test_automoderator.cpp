@@ -251,4 +251,21 @@ TEST_F(AutoModeratorTest, SkipPrivilegedAllowsWithoutCounting) {
               ActionType::Allow);
 }
 
+TEST_F(AutoModeratorTest, ConfigDrivenLimitAndMuteDuration) {
+    AutomodConfig cfg;
+    cfg.spam_window_seconds = 1.0;
+    cfg.spam_limit = 3;
+    cfg.mute_duration_seconds = 120;
+    AutoModerator mod(cfg);
+
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(mod.process_message(1, 1, "msg", 100.0 + i * 0.1).type,
+                  ActionType::Allow);
+    }
+    const Action a = mod.process_message(1, 1, "msg", 100.9);
+    EXPECT_EQ(a.type, ActionType::MuteTemporary);
+    EXPECT_EQ(a.duration_seconds, 120);
+    EXPECT_FALSE(a.delete_message);
+}
+
 }  // namespace

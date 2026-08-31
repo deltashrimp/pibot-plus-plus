@@ -14,14 +14,11 @@
 #include <oatpp/web/server/api/ApiController.hpp>
 
 #include "automoderator.hpp"
+#include "config.h"
 #include "core_client.hpp"
 #include "logger.h"
 
 namespace {
-
-// Users with rank <= 3 (dev, owner, admin+, admin) are exempt from automatic
-// moderation, mirroring the old Python bot.
-constexpr int kPrivilegedMaxRank = 3;
 
 double unixNow() {
     return std::chrono::duration<double>(
@@ -62,11 +59,13 @@ class AutoModController : public oatpp::web::server::api::ApiController {
 public:
     AutoModController(const std::shared_ptr<oatpp::data::mapping::ObjectMapper>& objectMapper,
                       std::shared_ptr<AutoModerator> moderator,
-                      std::shared_ptr<CoreClient> core)
+                      std::shared_ptr<CoreClient> core,
+                      int privilegedMaxRank)
         : oatpp::web::server::api::ApiController(objectMapper),
           objectMapper_(objectMapper),
           moderator_(std::move(moderator)),
-          core_(std::move(core)) {}
+          core_(std::move(core)),
+          privilegedMaxRank_(privilegedMaxRank) {}
 
     ENDPOINT("GET", "/", root) {
         return createResponse(Status::CODE_200, "pibot-auto-mod");
@@ -103,7 +102,7 @@ public:
         // message is still moderated (default member rank is 4).
         if (core_ != nullptr && core_->enabled()) {
             const int rank = core_->getChatRank(*dto->chat_id, *dto->user_id);
-            if (rank >= 0 && rank <= kPrivilegedMaxRank) {
+            if (rank >= 0 && rank <= privilegedMaxRank_) {
                 Action action = moderator_->skip_privileged(
                     *dto->chat_id, *dto->user_id, dto->text->c_str());
                 auto response = ModerateResponseDto::createShared();
@@ -137,6 +136,7 @@ private:
     std::shared_ptr<oatpp::data::mapping::ObjectMapper> objectMapper_;
     std::shared_ptr<AutoModerator> moderator_;
     std::shared_ptr<CoreClient> core_;
+    int privilegedMaxRank_;
 };
 
 #include OATPP_CODEGEN_END(ApiController)
@@ -190,11 +190,14 @@ int main() {
     Logger::init(parseLogLevel(envOr("LOG_LEVEL", "info")));
     Logger::info("авто-модератор запускается");
 
+    AppConfig config = loadConfig(envOr("CONFIG_PATH", "config.toml"));
+    const AutomodConfig& am = config.automod;
+
     const int port = parseInt(std::getenv("AUTO_MOD_PORT"), 8083);
     auto core = std::make_shared<CoreClient>(
         envOr("CORE_HOST", "core"),
         static_cast<uint16_t>(parseInt(std::getenv("CORE_PORT"), 8080)),
-        envOr("CORE_API_KEY"));
+        envOr("CORE_API_KEY"), am.cache_ttl_seconds);
     Logger::info(core->enabled()
                      ? "интеграция с core включена: проверка рангов привилегированных пользователей"
                      : "интеграция с core отключена (CORE_API_KEY не задан), все сообщения проходят проверку");
@@ -202,9 +205,10 @@ int main() {
     oatpp::base::Environment::init();
     auto objectMapper = std::make_shared<oatpp::parser::json::mapping::ObjectMapper>();
     auto router = oatpp::web::server::HttpRouter::createShared();
-    auto moderator = std::make_shared<AutoModerator>();
+    auto moderator = std::make_shared<AutoModerator>(am);
     router->addController(
-        std::make_shared<AutoModController>(objectMapper, moderator, core));
+        std::make_shared<AutoModController>(objectMapper, moderator, core,
+                                            am.privileged_max_rank));
     auto handler = oatpp::web::server::HttpConnectionHandler::createShared(router);
     auto provider = oatpp::network::tcp::server::ConnectionProvider::createShared(
         {"0.0.0.0", static_cast<v_uint16>(port),

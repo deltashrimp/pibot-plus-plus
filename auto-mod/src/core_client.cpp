@@ -35,8 +35,10 @@ class CoreRankDto : public oatpp::DTO {
 
 }  // namespace
 
-CoreClient::CoreClient(std::string host, uint16_t port, std::string api_key)
-    : host_(std::move(host)), port_(port), api_key_(std::move(api_key)) {}
+CoreClient::CoreClient(std::string host, uint16_t port, std::string api_key,
+                       double cache_ttl_seconds)
+    : host_(std::move(host)), port_(port), api_key_(std::move(api_key)),
+      cache_ttl_seconds_(cache_ttl_seconds) {}
 
 int CoreClient::getChatRank(int64_t chat_id, int64_t user_id) {
     {
@@ -45,7 +47,7 @@ int CoreClient::getChatRank(int64_t chat_id, int64_t user_id) {
         if (chat != cache_.end()) {
             auto entry = chat->second.find(user_id);
             if (entry != chat->second.end() &&
-                unix_now() - entry->second.fetched_at < kCacheTtlSeconds) {
+                unix_now() - entry->second.fetched_at < cache_ttl_seconds_) {
                 return entry->second.rank;
             }
         }

@@ -34,8 +34,10 @@ RUN git clone --depth 1 --branch ${OATPP_VERSION} https://github.com/oatpp/oatpp
     && cmake --install oatpp/build
 
 WORKDIR /app
-COPY CMakeLists.txt ./
-COPY src/ ./src/
+COPY core/CMakeLists.txt ./core/CMakeLists.txt
+COPY core/src/ ./core/src/
+COPY common/ ./common/
+WORKDIR /app/core
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release . \
     && cmake --build build -j"$(nproc)"
 
@@ -46,7 +48,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/build/pibot-core /usr/local/bin/pibot-core
+COPY --from=builder /app/core/build/pibot-core /usr/local/bin/pibot-core
 COPY --from=builder /usr/local/lib/libtd* /usr/local/lib/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libpqxx* /usr/lib/x86_64-linux-gnu/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libpq.so* /usr/lib/x86_64-linux-gnu/

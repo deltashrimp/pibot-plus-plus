@@ -19,17 +19,6 @@ constexpr std::array<std::string_view, 11> kFilterPatterns = {
     "вы плывете",           "консультация бесплатно",
 };
 
-// Anti-spam tuning: sustained sending above 3 messages/second for 3 seconds
-// (i.e. more than 9 messages in a 3-second sliding window) triggers a mute.
-constexpr double kSpamWindowSeconds = 3.0;  // 3-second sliding window
-constexpr size_t kSpamLimit = 9;            // 3 msg/s sustained for 3 s => spam
-constexpr int kMuteDurationSeconds = 60;    // temporary mute length
-
-// GC: when the total number of tracked timestamps exceeds this bound, sweep
-// the table and drop everything outside the spam window. Keeps memory bounded
-// without doing work on every single call.
-constexpr size_t kTrackedCap = 4096;
-
 // Lower-case fold of an upper-case Cyrillic letter encoded as a 0xD0-prefixed
 // two-byte UTF-8 sequence with continuation byte c2. Appends the fold to out
 // and returns true, or leaves out untouched and returns false when the pair is
@@ -214,7 +203,7 @@ Action AutoModerator::process_message(int64_t chat_id, int64_t user_id,
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        const double cutoff = timestamp - kSpamWindowSeconds;
+        const double cutoff = timestamp - spam_window_seconds_;
 
         auto& chat_tracker = spam_trackers_[chat_id];
         auto& user_tracker = chat_tracker[user_id];
@@ -229,12 +218,12 @@ Action AutoModerator::process_message(int64_t chat_id, int64_t user_id,
         user_tracker.push_back(timestamp);
         ++tracked_count_;
 
-        if (user_tracker.size() <= kSpamLimit) {
+        if (user_tracker.size() <= spam_limit_) {
             action = {ActionType::Allow, 0, false};
         } else {
             // Sustained >3 messages/second for 3 seconds: temporary mute.
             prune_locked(timestamp);
-            action = {ActionType::MuteTemporary, kMuteDurationSeconds, false};
+            action = {ActionType::MuteTemporary, mute_duration_seconds_, false};
         }
     }
 
@@ -259,11 +248,11 @@ std::string AutoModerator::match_filter(const std::string& lower_text) const {
 }
 
 void AutoModerator::prune_locked(double now) {
-    if (tracked_count_ <= kTrackedCap) {
+    if (tracked_count_ <= tracked_cap_) {
         return;
     }
 
-    const double cutoff = now - kSpamWindowSeconds;
+    const double cutoff = now - spam_window_seconds_;
     for (auto chat = spam_trackers_.begin(); chat != spam_trackers_.end();) {
         for (auto user = chat->second.begin(); user != chat->second.end();) {
             auto& timestamps = user->second;

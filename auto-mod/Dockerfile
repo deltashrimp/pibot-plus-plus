@@ -23,8 +23,10 @@ RUN git clone --depth 1 --branch ${OATPP_VERSION} https://github.com/oatpp/oatpp
     && cmake --install oatpp/build
 
 WORKDIR /app
-COPY CMakeLists.txt ./
-COPY src/ ./src/
+COPY auto-mod/CMakeLists.txt ./auto-mod/CMakeLists.txt
+COPY auto-mod/src/ ./auto-mod/src/
+COPY common/ ./common/
+WORKDIR /app/auto-mod
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release . \
     && cmake --build build -j"$(nproc)"
 
@@ -37,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # The binary links oatpp statically (built from source above); only spdlog
 # and fmt are shared. Copy those so the container is self-contained.
-COPY --from=builder /app/build/pibot-auto-mod /usr/local/bin/pibot-auto-mod
+COPY --from=builder /app/auto-mod/build/pibot-auto-mod /usr/local/bin/pibot-auto-mod
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libspdlog.so* /usr/lib/x86_64-linux-gnu/
 COPY --from=builder /usr/lib/x86_64-linux-gnu/libfmt.so* /usr/lib/x86_64-linux-gnu/
 RUN ldconfig

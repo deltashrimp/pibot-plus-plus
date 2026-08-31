@@ -4,6 +4,14 @@ project(pibot-core LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(FetchContent)
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG v3.4.0
+)
+FetchContent_MakeAvailable(tomlplusplus)
+
 find_package(Threads REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(spdlog REQUIRED)
@@ -23,6 +31,7 @@ add_executable(pibot-core ${PIBOT_CORE_SOURCES})
 target_include_directories(pibot-core PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../common
 )
 
 target_link_libraries(pibot-core PRIVATE
@@ -33,4 +42,5 @@ target_link_libraries(pibot-core PRIVATE
     oatpp::oatpp
     Td::tdjson_static
     PkgConfig::PQXX
+    tomlplusplus::tomlplusplus
 )

@@ -16,6 +16,7 @@
 
 #include "ai/ai_client.h"
 #include "commands/command_handler.h"
+#include "config.h"
 #include "rp/rp_client.h"
 #include "tools/tools_client.h"
 
@@ -27,7 +28,8 @@ public:
     ModerationCommands(std::shared_ptr<TdlibClient> tdlib, std::shared_ptr<DbManager> db,
                        std::shared_ptr<rp::RpClient> rpClient,
                        std::shared_ptr<tools::ToolsClient> toolsClient,
-                       std::shared_ptr<ai::AiClient> aiClient);
+                       std::shared_ptr<ai::AiClient> aiClient,
+                       CommandsConfig commandsConfig = CommandsConfig{});
 
     bool canHandle(const std::string& command) const override;
     void handle(const CommandContext& context) override;
@@ -149,6 +151,7 @@ private:
     std::shared_ptr<rp::RpClient> rpClient_;
     std::shared_ptr<tools::ToolsClient> toolsClient_;
     std::shared_ptr<ai::AiClient> aiClient_;
+    CommandsConfig commandsConfig_;
 
     std::mutex rateLimitMutex_;
     std::unordered_map<int64_t, int64_t> lastCommandAt_;

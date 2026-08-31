@@ -4,6 +4,14 @@ project(pibot-tests LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+include(FetchContent)
+FetchContent_Declare(
+    tomlplusplus
+    GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+    GIT_TAG v3.4.0
+)
+FetchContent_MakeAvailable(tomlplusplus)
+
 find_package(Threads REQUIRED)
 find_package(spdlog REQUIRED)
 find_package(GTest REQUIRED)
@@ -11,6 +19,7 @@ include(GoogleTest)
 
 set(CORE_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../core/src)
 set(AUTO_MOD_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../auto-mod/src)
+set(COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../common)
 
 # core/src/utils/helpers — pure logic, no service dependencies.
 add_executable(test_helpers
@@ -30,11 +39,12 @@ target_link_libraries(test_helpers PRIVATE
 add_executable(test_automoderator
     test_automoderator.cpp
 )
-target_include_directories(test_automoderator PRIVATE ${AUTO_MOD_SRC_DIR})
+target_include_directories(test_automoderator PRIVATE ${AUTO_MOD_SRC_DIR} ${COMMON_DIR})
 target_link_libraries(test_automoderator PRIVATE
     Threads::Threads
     spdlog::spdlog
     GTest::gtest_main
+    tomlplusplus::tomlplusplus
 )
 
 # auto-mod Logger — structured JSON formatter, same include-the-source trick.

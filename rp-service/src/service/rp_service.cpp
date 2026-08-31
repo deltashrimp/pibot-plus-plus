@@ -135,7 +135,10 @@ bool RpService::loadPredefined(const std::string& path) {
     return true;
 }
 
-void RpService::ensureDefaults(int64_t chatId) {
+void RpService::seedDefaults(int64_t chatId) {
+    if (storage_->isSeeded(chatId)) {
+        return;
+    }
     std::unordered_map<std::string, std::string> defaults;
     {
         std::lock_guard<std::mutex> lock(defaultsMutex_);
@@ -144,16 +147,19 @@ void RpService::ensureDefaults(int64_t chatId) {
     if (defaults.empty()) {
         return;
     }
+    // Only add commands that are missing (HSETNX) so existing user
+    // customisations are never overwritten during the one-time seed.
     for (const auto& pair : defaults) {
         storage_->addIfAbsent(chatId, pair.first, pair.second);
     }
+    storage_->markSeeded(chatId);
 }
 
 MatchResult RpService::match(int64_t chatId, int64_t userId, const std::string& text,
                              int64_t replyToUserId, const std::string& mention1,
                              const std::string& mention2) {
     MatchResult result;
-    ensureDefaults(chatId);
+    seedDefaults(chatId);
 
     const std::string trigger = extractTrigger(text);
     if (trigger.empty()) {
@@ -189,7 +195,7 @@ CommandResult RpService::addCommand(int64_t chatId, const std::string& trigger,
         return {false, "Некорректный ответ. Ответ не должен быть пустым (макс. " +
                            std::to_string(kMaxResponseLength) + " символов)."};
     }
-    ensureDefaults(chatId);
+    seedDefaults(chatId);
     if (storage_->hasCommand(chatId, t)) {
         return {false, "Команда уже существует. Используйте действие edit для изменения."};
     }
@@ -230,7 +236,7 @@ CommandResult RpService::editCommand(int64_t chatId, const std::string& trigger,
 }
 
 std::unordered_map<std::string, std::string> RpService::listCommands(int64_t chatId) {
-    ensureDefaults(chatId);
+    seedDefaults(chatId);
     return storage_->listCommands(chatId);
 }
 

@@ -282,12 +282,14 @@ ModerationCommands::ModerationCommands(std::shared_ptr<TdlibClient> tdlib,
                                        std::shared_ptr<DbManager> db,
                                        std::shared_ptr<rp::RpClient> rpClient,
                                        std::shared_ptr<tools::ToolsClient> toolsClient,
-                                       std::shared_ptr<ai::AiClient> aiClient)
+                                       std::shared_ptr<ai::AiClient> aiClient,
+                                       CommandsConfig commandsConfig)
     : tdlib_(std::move(tdlib)),
       db_(std::move(db)),
       rpClient_(std::move(rpClient)),
       toolsClient_(std::move(toolsClient)),
-      aiClient_(std::move(aiClient)) {}
+      aiClient_(std::move(aiClient)),
+      commandsConfig_(std::move(commandsConfig)) {}
 
 const std::unordered_map<std::string, ModerationCommands::CommandAction>&
 ModerationCommands::commandTable() {
@@ -499,7 +501,7 @@ void ModerationCommands::executeMute(const CommandContext& context) {
     }
 
     moderateTarget(
-        context, 3, targetIndex < context.args.size() ? context.args[targetIndex] : "",
+        context, commandsConfig_.getRank("mute", 3), targetIndex < context.args.size() ? context.args[targetIndex] : "",
         "Вы не можете замутить этого пользователя.",
         [this, context, until](int64_t targetId) {
             auto permissions = td::td_api::make_object<td::td_api::chatPermissions>(
@@ -513,7 +515,7 @@ void ModerationCommands::executeMute(const CommandContext& context) {
 
 void ModerationCommands::executeUnmute(const CommandContext& context) {
     moderateTarget(
-        context, 3, firstArg(context), "Вы не можете размутить этого пользователя.",
+        context, commandsConfig_.getRank("unmute", 3), firstArg(context), "Вы не можете размутить этого пользователя.",
         [this, context](int64_t targetId) {
             db_->removeMute(context.chat_id, targetId);
             auto status = td::td_api::make_object<td::td_api::chatMemberStatusMember>();
@@ -524,7 +526,7 @@ void ModerationCommands::executeUnmute(const CommandContext& context) {
 
 void ModerationCommands::executeKick(const CommandContext& context) {
     moderateTarget(
-        context, 2, firstArg(context), "Вы не можете кикнуть этого пользователя.",
+        context, commandsConfig_.getRank("kick", 2), firstArg(context), "Вы не можете кикнуть этого пользователя.",
         [this, context](int64_t targetId) {
             banWithReply(context, targetId, static_cast<int32_t>(helpers::unixNow()), false,
                          "Пользователь кикнут.", "Не удалось кикнуть пользователя");
@@ -533,7 +535,7 @@ void ModerationCommands::executeKick(const CommandContext& context) {
 
 void ModerationCommands::executeBan(const CommandContext& context) {
     moderateTarget(
-        context, 1, firstArg(context), "Вы не можете забанить этого пользователя.",
+        context, commandsConfig_.getRank("ban", 1), firstArg(context), "Вы не можете забанить этого пользователя.",
         [this, context](int64_t targetId) {
             banWithReply(context, targetId, 0, true,
                          "Пользователь забанен.", "Не удалось забанить пользователя");
@@ -542,7 +544,7 @@ void ModerationCommands::executeBan(const CommandContext& context) {
 
 void ModerationCommands::executeUnban(const CommandContext& context) {
     moderateTarget(
-        context, 1, firstArg(context), "Вы не можете разбанить этого пользователя.",
+        context, commandsConfig_.getRank("unban", 1), firstArg(context), "Вы не можете разбанить этого пользователя.",
         [this, context](int64_t targetId) {
             auto status = td::td_api::make_object<td::td_api::chatMemberStatusMember>();
             setMemberStatus(context, targetId, std::move(status),
@@ -551,7 +553,7 @@ void ModerationCommands::executeUnban(const CommandContext& context) {
 }
 
 void ModerationCommands::executeGlobalBan(const CommandContext& context) {
-    requireRank(context, 0,
+    requireRank(context, commandsConfig_.getRank("globalban", 0),
                 [this, context, targetToken = firstArg(context)] {
                     resolveTarget(targetToken, context,
                                   [this, context](int64_t targetId) {
@@ -566,7 +568,7 @@ void ModerationCommands::executeGlobalBan(const CommandContext& context) {
 }
 
 void ModerationCommands::executeGlobalUnban(const CommandContext& context) {
-    requireRank(context, 0,
+    requireRank(context, commandsConfig_.getRank("globalunban", 0),
                 [this, context, targetToken = firstArg(context)] {
                     resolveTarget(targetToken, context,
                                   [this, context](int64_t targetId) {
@@ -582,7 +584,7 @@ void ModerationCommands::executeGlobalUnban(const CommandContext& context) {
 
 void ModerationCommands::executeDevCommands(const CommandContext& context) {
     requireRank(
-        context, 0,
+        context, commandsConfig_.getRank("devc", 0),
         [this, context] {
             std::string text = "Dev-команды:\n";
             for (const auto& [command, description] : devCommandList()) {
@@ -644,7 +646,7 @@ void ModerationCommands::executeRank(const CommandContext& context) {
     }
 
     moderateTarget(
-        context, newRank == 2 ? 1 : 2, context.args.size() > 1 ? context.args[1] : "",
+        context, commandsConfig_.getRank("rank", 1), context.args.size() > 1 ? context.args[1] : "",
         "Вы не можете изменить ранг этого пользователя.",
         [this, context, newRank](int64_t targetId) {
             applyRankChange(context, newRank, targetId);
@@ -681,7 +683,7 @@ void ModerationCommands::sendChatRanksReport(const CommandContext& context) {
 }
 
 void ModerationCommands::executeRanks(const CommandContext& context) {
-    requireRank(context, 4,
+    requireRank(context, commandsConfig_.getRank("ranks", 4),
                 [this, context] { sendChatRanksReport(context); },
                 replier(context));
 }
@@ -789,7 +791,7 @@ void ModerationCommands::reportRpResult(const CommandContext& context, bool ok,
 
 void ModerationCommands::executeRpAdd(const CommandContext& context) {
     requireRank(
-        context, 1,
+        context, commandsConfig_.getRank("rpadd", 1),
         [this, context] {
             if (context.args.size() < 2 || context.raw_args.empty()) {
                 reply(context, "Использование: /rpadd <триггер> <ответ>");
@@ -805,7 +807,7 @@ void ModerationCommands::executeRpAdd(const CommandContext& context) {
 
 void ModerationCommands::executeRpRemove(const CommandContext& context) {
     requireRank(
-        context, 1,
+        context, commandsConfig_.getRank("rpremove", 1),
         [this, context] {
             if (context.args.empty()) {
                 reply(context, "Использование: /rpremove <триггер>");
@@ -820,7 +822,7 @@ void ModerationCommands::executeRpRemove(const CommandContext& context) {
 
 void ModerationCommands::executeRpEdit(const CommandContext& context) {
     requireRank(
-        context, 1,
+        context, commandsConfig_.getRank("rpedit", 1),
         [this, context] {
             if (context.args.size() < 2 || context.raw_args.empty()) {
                 reply(context, "Использование: /rpedit <триггер> <новый ответ>");
@@ -836,7 +838,7 @@ void ModerationCommands::executeRpEdit(const CommandContext& context) {
 
 void ModerationCommands::executeRpList(const CommandContext& context) {
     requireRank(
-        context, 1,
+        context, commandsConfig_.getRank("rplist", 1),
         [this, context] {
             auto commands = rpClient_->listCommands(context.chat_id);
             if (commands.empty()) {
@@ -857,7 +859,7 @@ void ModerationCommands::executeRpList(const CommandContext& context) {
 }
 
 void ModerationCommands::executeGClone(const CommandContext& context) {
-    requireRank(context, 2,
+    requireRank(context, commandsConfig_.getRank("gclone", 2),
                 [this, context] {
                     if (context.args.empty()) {
                         reply(context, "Использование: /gclone <URL репозитория>");
@@ -912,7 +914,7 @@ void ModerationCommands::executeGClone(const CommandContext& context) {
 }
 
 void ModerationCommands::executeAi(const CommandContext& context) {
-    requireRank(context, 4,
+    requireRank(context, commandsConfig_.getRank("ai", 4),
                 [this, context] {
                     const std::string question = helpers::sanitizeForAi(context.raw_args);
                     if (question.empty()) {

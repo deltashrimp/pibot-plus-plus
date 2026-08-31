@@ -13,6 +13,7 @@
 #include "api/api_controller.h"
 #include "ai/ai_client.h"
 #include "commands/moderation_commands.h"
+#include "config.h"
 #include "database/db_manager.h"
 #include "logging/logger.h"
 #include "rp/rp_client.h"
@@ -81,7 +82,8 @@ int main(int argc, char* argv[]) {
         envOr("TOOLS_SERVICE_URL", "http://tools:8084"), envOr("TOOLS_API_KEY"));
     auto aiClient = std::make_shared<ai::AiClient>(
         envOr("AI_SERVICE_URL", "http://ai:8082"), envOr("AI_API_KEY"));
-    auto commands = std::make_shared<ModerationCommands>(tdlib, db, rpClient, toolsClient, aiClient);
+    AppConfig config = loadConfig(envOr("CONFIG_PATH", "config.toml"));
+    auto commands = std::make_shared<ModerationCommands>(tdlib, db, rpClient, toolsClient, aiClient, config.commands);
     tdlib->setMessageHandler(
         [commands](td::td_api::object_ptr<td::td_api::message> message) {
             commands->handleMessage(std::move(message));

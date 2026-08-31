@@ -22,9 +22,10 @@ public:
     // into memory. Returns false if the file is missing or cannot be parsed.
     bool loadPredefined(const std::string& path);
 
-    // Adds any predefined commands that are missing in the chat's hash.
-    // Existing (possibly customised) commands are never overwritten.
-    void ensureDefaults(int64_t chatId);
+    // Seeds a chat with the predefined commands exactly once (on first
+    // access). The seeding is recorded in Redis so that later edits/removals
+    // of a default command are never overwritten on a restart or a later call.
+    void seedDefaults(int64_t chatId);
 
     MatchResult match(int64_t chatId, int64_t userId, const std::string& text,
                       int64_t replyToUserId, const std::string& mention1,

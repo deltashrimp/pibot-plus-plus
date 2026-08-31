@@ -58,7 +58,7 @@ CMakeUserPresets.json
 # Log file
 *.log
 
-# bin classes 
+# bin classes
 bin
 
 # Eclipse settings
@@ -270,7 +270,7 @@ gradle-app.setting
 # Java heap dump
 *.hprof
 
-.dev 
+.dev
 internal/
 ai-service/src/main/resources/ruleset.md
 ai-service/src/main/resources/bio.md
@@ -278,7 +278,5 @@ ai-service/src/main/resources/bio.md
 # Repowise local index & generated tool configs
 .repowise/
 .claude/
-.mcp.json
-opencode.jsonc
-ai-service/src/main/resources/bio (2).md
-ai-service/src/main/resources/ruleset (2).md
+ai-service/src/main/resources/bio_agnes.md
+ai-service/src/main/resources/ruleset_agnes.md

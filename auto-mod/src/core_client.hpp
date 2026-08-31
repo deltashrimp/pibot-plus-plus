@@ -13,11 +13,12 @@
 // Python bot's behaviour.
 //
 // Thread-safe: may be called concurrently from multiple threads. Successful
-// results are cached briefly (see kCacheTtlSeconds); failed lookups are never
+// results are cached briefly (see cache_ttl_seconds); failed lookups are never
 // cached so a transient Core outage is retried on the next call.
 class CoreClient {
 public:
-    CoreClient(std::string host, uint16_t port, std::string api_key);
+    CoreClient(std::string host, uint16_t port, std::string api_key,
+               double cache_ttl_seconds = 60.0);
 
     // Rank checks require a configured API key: without one Core rejects all
     // requests with 401, so the check would be pointless.
@@ -37,8 +38,7 @@ private:
     std::string host_;
     uint16_t port_;
     std::string api_key_;
-
-    static constexpr double kCacheTtlSeconds = 60.0;
+    double cache_ttl_seconds_;
 
     std::mutex cache_mutex_;
     std::unordered_map<int64_t, std::unordered_map<int64_t, CacheEntry>> cache_;

@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "config.h"
+
 // Actions returned by the moderator to the caller.
 enum class ActionType {
     Allow,          // message passes, no action
@@ -36,7 +38,11 @@ const char* action_type_to_string(ActionType type);
 // All state lives in memory; nothing is persisted across restarts.
 class AutoModerator {
 public:
-    AutoModerator() = default;
+    explicit AutoModerator(AutomodConfig config = AutomodConfig{})
+        : spam_window_seconds_(config.spam_window_seconds),
+          spam_limit_(config.spam_limit),
+          mute_duration_seconds_(config.mute_duration_seconds),
+          tracked_cap_(config.tracked_cap) {}
 
     // Process an incoming message.
     //   chat_id, user_id – identifiers (64-bit integers)
@@ -60,6 +66,11 @@ private:
 
     // Drop spam-tracking entries that can no longer affect decisions.
     void prune_locked(double now);
+
+    const double spam_window_seconds_;
+    const size_t spam_limit_;
+    const int mute_duration_seconds_;
+    const size_t tracked_cap_;
 
     // spam_trackers_[chat_id][user_id] = timestamps of recent messages.
     // Invariant (guarded by mutex_): timestamps are within the spam window.

@@ -1,0 +1,33 @@
+[automod]
+# Sliding window for spam detection (seconds)
+spam_window_seconds = 3.0
+# Max messages in window before mute
+spam_limit = 9
+# Temporary mute duration when spam is detected (seconds)
+mute_duration_seconds = 60
+# Users with rank <= this value are exempt from auto-moderation
+privileged_max_rank = 3
+# Rank cache TTL from core (seconds)
+cache_ttl_seconds = 60.0
+# GC cap for spam tracker memory
+tracked_cap = 4096
+
+[commands]
+# command = required_rank (lower number = higher privilege)
+mute = 3
+unmute = 3
+kick = 2
+ban = 1
+unban = 1
+globalban = 0
+globalunban = 0
+devc = 0
+# /rank is owner-only (a single rank level for all rank changes)
+rank = 1
+ranks = 4
+rpadd = 1
+rpremove = 1
+rpedit = 1
+rplist = 1
+gclone = 2
+ai = 4
