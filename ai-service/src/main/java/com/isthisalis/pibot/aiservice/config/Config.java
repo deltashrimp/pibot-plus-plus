@@ -131,7 +131,7 @@ public class Config {
     }
 
     private static String tryEnv(String val) {
-        if (val.startsWith("$")) { val.substring(1); return System.getenv(val); }
+        if (val.startsWith("$")) { return System.getenv(val.substring(1)); }
         else return val;
     }
 }
