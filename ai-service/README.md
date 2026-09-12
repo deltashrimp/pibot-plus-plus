@@ -2,22 +2,32 @@
 
 ## Configuration
 
-src/main/resources/application-ai.yaml:
-```YAML
-api-key: "AI API provider api key" # Type: String
-api-url: "AI API endpoint" # Type: String
-model: "AI model" # Type: String
+AI settings live in the shared `config.toml` (`[ai]` and `[ai.providers.*]`
+tables), read from `CONFIG_PATH` (default `/app/config.toml`, mounted by
+Docker Compose). `config.toml` is gitignored and holds ALL settings (general +
+AI, including private rulesets/bio); `public-config.toml` holds the shared
+defaults and is copied into it by `scripts/build.sh`. See the comments in
+`config.toml`.
 
-rules: "AI answering ruleset" # Type: String
-bio: "AI personality" # Type: String
+```TOML
+[ai]
+provider = "groq"                     # active provider key
+api_key = "$GROQ_API_KEY"             # literal or "$ENV_VAR" reference
+rules = "file:/app-config/ruleset.md" # literal, "file:/path", or inline
+bio = "file:/app-config/bio.md"       # literal, "file:/path", or inline
+
+[ai.providers.groq]
+api_url = "https://api.groq.com/openai/v1/chat/completions"
+model = "openai/gpt-oss-120b"
 ```
 
-`rules` and `bio` are inserted into the AI's system prompt. Instead of a literal
-value you can load them from a file on disk with the `file:` prefix, e.g.
-`rules: "file:/app-config/ruleset.md"` (absolute path recommended; relative paths
-resolve against the working dir). The files are re-read on startup and on every
-`POST /reload_config`, so edits apply without a rebuild. In Docker,
-`./ai-service/src/main/resources` is mounted at `/app-config`.
+`rules` and `bio` are inserted into the AI's system prompt. Values can be
+literal strings, or loaded from disk with the `file:` prefix, e.g.
+`rules: "file:/app-config/ruleset.md"` (absolute path recommended; relative
+paths resolve against the working dir). The config is re-read on startup and on
+every `POST /reload_config`, so edits apply without a rebuild. In Docker,
+`./config.toml` (private, merged from `public-config.toml` by
+`scripts/build.sh`) is mounted at `/app/config.toml`.
 
 ---
 

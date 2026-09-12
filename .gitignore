@@ -272,14 +272,13 @@ gradle-app.setting
 
 .dev
 internal/
-ai-service/src/main/resources/ruleset.md
-ai-service/src/main/resources/bio.md
 .mcp.json
 opencode.jsonc
 
+# Private config (contains ALL settings: secrets, private rulesets & bio).
+# Public defaults live in public-config.toml and are merged in by build.sh.
+config.toml
 
 # Repowise local index & generated tool configs
 .repowise/
 .claude/
-ai-service/src/main/resources/bio_agnes.md
-ai-service/src/main/resources/ruleset_agnes.md

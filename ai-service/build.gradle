@@ -40,5 +40,5 @@ dependencies {
    compileOnly 'org.projectlombok:lombok:1.18.46'
    annotationProcessor 'org.projectlombok:lombok:1.18.46'
 
-   implementation 'tools.jackson.dataformat:jackson-dataformat-yaml:3.2.1'
+   implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-toml:2.19.4'
 }

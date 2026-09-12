@@ -106,8 +106,9 @@ services:
       CORE_API_KEY: ${CORE_API_KEY}
       CORE_HOST: core
       CORE_PORT: ${CORE_PORT}
+      CONFIG_PATH: /app/config.toml
     volumes:
-      - ./ai-service/src/main/resources:/app-config
+      - ./config.toml:/app/config.toml:ro
     networks:
       - pibot-net
     healthcheck:

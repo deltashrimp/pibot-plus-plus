@@ -1,23 +1,25 @@
 package com.isthisalis.pibot.aiservice.config;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.web.client.RestClient;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.dataformat.toml.TomlMapper;
 
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.ToString;
-import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.PropertyNamingStrategies;
-import tools.jackson.dataformat.yaml.YAMLMapper;
 
 /**
  * Application beans.
@@ -45,51 +47,55 @@ public class Config {
         return RestClient.builder().baseUrl(coreApiUrl).build();
     }
 
+    /**
+     * Loads the AI configuration from the shared TOML config
+     * ({@code CONFIG_PATH}, default {@code /app/config.toml}).
+     *
+     * <p>Expected layout (see {@code config.toml}):
+     * <pre>
+     * [ai]
+     * provider = "groq"
+     * api_key = "$GROQ_API_KEY"
+     * rules = "..."   # literal, "file:/path", or inline multi-line
+     * bio = "..."     # literal, "file:/path", or inline multi-line
+     *
+     * [ai.providers.groq]
+     * api_url = "https://..."
+     * model = "..."
+     * </pre>
+     */
     @Bean
     public static com.isthisalis.ailib.api.Configuration reload() {
-        ObjectMapper mapper = YAMLMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.KEBAB_CASE).build();
-
         try {
-            com.isthisalis.ailib.api.Configuration config = mapper.readValue(new ClassPathResource("application-ai.yaml").getInputStream(),
-             com.isthisalis.ailib.api.Configuration.class);
+            TomlMapper mapper = TomlMapper.builder()
+                    .propertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                    .build();
 
-             String bio = valOrFile(config.getBio());
-             String rules = valOrFile(config.getRules());
+            String path = System.getenv().getOrDefault("CONFIG_PATH", "/app/config.toml");
+            AiTomlConfig toml = mapper.readValue(new File(path), AiTomlConfig.class);
 
-             String model = tryEnv(config.getModel());
-             String apiKey = tryEnv(config.getApiKey());
-             String apiUrl = tryEnv(config.getApiUrl());
+            Ai ai = toml.getAi();
+            String providerName = ai.getProvider();
+            Provider provider = ai.getProviders() != null ? ai.getProviders().get(providerName) : null;
+            if (provider == null) {
+                log.atError().log("AI provider '{}' not found in {} under [ai.providers]", providerName, path);
+                return new com.isthisalis.ailib.api.Configuration("", "", "", "", "");
+            }
 
-             return new com.isthisalis.ailib.api.Configuration(apiKey, apiUrl, model, rules, bio);
-        } catch (IOException e) {
+            String apiKey = tryEnv(ai.getApiKey());
+            String apiUrl = tryEnv(provider.getApiUrl());
+            String model = tryEnv(provider.getModel());
+            String rules = valOrFile(ai.getRules());
+            String bio = valOrFile(ai.getBio());
+
+            log.atInfo().log("AI config loaded: provider={}, model={}, rules={} chars, bio={} chars",
+                    providerName, model, rules == null ? 0 : rules.length(), bio == null ? 0 : bio.length());
+
+            return new com.isthisalis.ailib.api.Configuration(apiKey, apiUrl, model, rules, bio);
+        } catch (Exception e) {
             log.atError().log("Error in config reloading! " + e);
             return new com.isthisalis.ailib.api.Configuration("", "", "", "", "");
         }
-    }
-
-    /*@Bean
-    public static com.isthisalis.ailib.api.Configuration reload() throws IOException {
-        YAMLMapper yaml = YAMLMapper.builder().propertyNamingStrategy(PropertyNamingStrategies.KEBAB_CASE).build();
-        com.isthisalis.ailib.api.Configuration base = yaml.readValue(
-                new ClassPathResource("application-ai.yaml").getInputStream(),
-                com.isthisalis.ailib.api.Configuration.class);
-        String rules = textOr(base.getRules(), "rules");
-        String bio = textOr(base.getBio(), "bio");
-        log.info("AI config loaded: model={}, rules={} chars, bio={} chars",
-                envOr("AI_MODEL", base.getModel()),
-                rules == null ? 0 : rules.length(),
-                bio == null ? 0 : bio.length());
-        return new com.isthisalis.ailib.api.Configuration(
-                envOr("GROQ_API_KEY", base.getApiKey()),
-                envOr("GROQ_API_URL", base.getApiUrl()),
-                envOr("AI_MODEL", base.getModel()),
-                rules,
-                bio);
-    }
-
-    private static String envOr(String name, String fallback) {
-        String value = System.getenv(name);
-        return (value == null || value.isEmpty()) ? fallback : value;
     }
 
     /**
@@ -97,23 +103,7 @@ public class Config {
      * value starts with {@code file:} (e.g. {@code file:/app/rules.txt}). The file
      * is re-read on every reload, so edits on disk apply without a rebuild. On
      * read failure the literal value is kept.
-     */ /* 
-    private static String textOr(String value, String field) {
-        if (value == null || !value.startsWith("file:")) {
-            return value;
-        }
-        String path = value.substring("file:".length()).trim();
-        if (path.isEmpty()) {
-            return value;
-        }
-        try {
-            return Files.readString(Paths.get(path));
-        } catch (IOException e) {
-            log.warn("Cannot read {} file '{}': {}; keeping literal value", field, path, e.getMessage());
-            return value;
-        }
-    }*/
-
+     */
     private static String valOrFile(@NonNull String val) {
         if (val.startsWith("file:")) {
             Path path = Path.of(val.substring(5));
@@ -133,5 +123,52 @@ public class Config {
     private static String tryEnv(String val) {
         if (val.startsWith("$")) { return System.getenv(val.substring(1)); }
         else return val;
+    }
+
+    /** TOML root: only the {@code [ai]} table is consumed by this service. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class AiTomlConfig {
+        private Ai ai;
+
+        public Ai getAi() { return ai; }
+        public void setAi(Ai ai) { this.ai = ai; }
+    }
+
+    /** The {@code [ai]} table and its {@code [ai.providers.*]} sub-tables. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Ai {
+        private String apiKey;
+        private String provider;
+        private String rules;
+        private String bio;
+        private Map<String, Provider> providers;
+
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+
+        public String getProvider() { return provider; }
+        public void setProvider(String provider) { this.provider = provider; }
+
+        public String getRules() { return rules; }
+        public void setRules(String rules) { this.rules = rules; }
+
+        public String getBio() { return bio; }
+        public void setBio(String bio) { this.bio = bio; }
+
+        public Map<String, Provider> getProviders() { return providers; }
+        public void setProviders(Map<String, Provider> providers) { this.providers = providers; }
+    }
+
+    /** A single provider entry under {@code [ai.providers.X]}. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Provider {
+        private String apiUrl;
+        private String model;
+
+        public String getApiUrl() { return apiUrl; }
+        public void setApiUrl(String apiUrl) { this.apiUrl = apiUrl; }
+
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
     }
 }
