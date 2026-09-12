@@ -1,12 +1,12 @@
-FROM gradle:8-jdk21 AS build
+FROM gradle:9.6.1-jdk21 AS build
 WORKDIR /app
 
+COPY gradle.properties .
 COPY src ./src
 COPY build.gradle .
 
-RUN gradle wrapper
-RUN ./gradlew dependencies
-RUN ./gradlew build 
+RUN gradle dependencies
+RUN gradle build 
 
 
 FROM eclipse-temurin:21-jre-alpine
