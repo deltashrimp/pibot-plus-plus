@@ -112,6 +112,8 @@ private:
     void executeGlobalUnban(const CommandContext& context);
     // Replies with the list of dev-only (rank 0) commands.
     void executeDevCommands(const CommandContext& context);
+    // Sends raw_args as a plain-text message to every known chat.
+    void executeGNotify(const CommandContext& context);
     void executeRank(const CommandContext& context);
     void executeRanks(const CommandContext& context);
     void executeStart(const CommandContext& context);

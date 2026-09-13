@@ -113,6 +113,7 @@ const std::vector<std::pair<const char*, const char*>>& devCommandList() {
         {"devc", "список dev-команд"},
         {"globalban <цель>", "добавить пользователя в глобальный бан"},
         {"globalunban <цель>", "убрать пользователя из глобального бана"},
+        {"gnotify <сообщение>", "отправить сообщение во все известные чаты"},
     };
     return commands;
 }
@@ -303,6 +304,7 @@ ModerationCommands::commandTable() {
         {"globalban", &ModerationCommands::executeGlobalBan},
         {"globalunban", &ModerationCommands::executeGlobalUnban},
         {"devc", &ModerationCommands::executeDevCommands},
+        {"gnotify", &ModerationCommands::executeGNotify},
         {"rank", &ModerationCommands::executeRank},
         {"ranks", &ModerationCommands::executeRanks},
         {"rpadd", &ModerationCommands::executeRpAdd},
@@ -345,6 +347,7 @@ void ModerationCommands::handleMessage(td::td_api::object_ptr<td::td_api::messag
 
     const int64_t chatId = message->chat_id_;
     const int64_t senderId = senderUserId(*message);
+    db_->recordChat(chatId);
     if (senderId == 0) {
         return;
     }
@@ -591,6 +594,71 @@ void ModerationCommands::executeDevCommands(const CommandContext& context) {
                 text += std::string("/") + command + " - " + description + "\n";
             }
             tdlib_->sendTextPlain(context.chat_id, text, context.message_id);
+        },
+        replier(context));
+}
+
+void ModerationCommands::executeGNotify(const CommandContext& context) {
+    requireRank(
+        context, commandsConfig_.getRank("gnotify", 0),
+        [this, context] {
+            const std::string text = context.raw_args;
+            if (text.empty()) {
+                reply(context, "Использование: /gnotify <сообщение>");
+                return;
+            }
+            const std::vector<int64_t> allChatIds = db_->getKnownChats();
+            if (allChatIds.empty()) {
+                reply(context, "Нет известных чатов.");
+                return;
+            }
+            // Positive chat ids are private DMs whose id equals the user id
+            // (groups and channels are negative); skip DMs of users on the
+            // global banlist.
+            std::vector<int64_t> chatIds;
+            int excludedBanned = 0;
+            chatIds.reserve(allChatIds.size());
+            for (int64_t chatId : allChatIds) {
+                if (chatId > 0 && db_->isGloballyBanned(chatId)) {
+                    ++excludedBanned;
+                    continue;
+                }
+                chatIds.push_back(chatId);
+            }
+            if (chatIds.empty()) {
+                reply(context, "Нет доступных чатов (все известные чаты принадлежат "
+                               "забаненным пользователям).");
+                return;
+            }
+            auto pending = std::make_shared<std::atomic<int>>(
+                static_cast<int>(chatIds.size()));
+            auto sent = std::make_shared<std::atomic<int>>(0);
+            const int chatCount = static_cast<int>(chatIds.size());
+            for (int64_t chatId : chatIds) {
+                // Plain text: every character (including emoji) is delivered
+                // exactly as typed, without markdown parsing.
+                tdlib_->sendTextPlain(
+                    chatId, text, 0,
+                    [this, context, pending, sent, chatCount, excludedBanned](
+                        int64_t sentMessageId) {
+                        if (sentMessageId > 0) {
+                            sent->fetch_add(1);
+                        }
+                        if (--(*pending) != 0) {
+                            return;
+                        }
+                        std::string summary = "Уведомление отправлено: " +
+                                              std::to_string(sent->load()) + " из " +
+                                              std::to_string(chatCount) + " чатов.";
+                        if (excludedBanned > 0) {
+                            summary += " (пропущено забаненных: " +
+                                       std::to_string(excludedBanned) + ")";
+                        }
+                        reply(context, summary);
+                        Logger::info("gnotify dispatched", context.sender_id,
+                                     context.chat_id, "");
+                    });
+            }
         },
         replier(context));
 }
@@ -1065,7 +1133,8 @@ void ModerationCommands::executeStart(const CommandContext& context) {
         "/rpedit <триггер> <ответ> - изменить RP-команду\n"
         "/rplist - список RP-команд в чате\n"
         "/gclone <URL> - скачать репозиторий архивом (.zip)\n"
-        "/ai <сообщение> - спросить у ИИ\n\n"
+        "/ai <сообщение> - спросить у ИИ\n"
+        "/gnotify <сообщение> - отправить уведомление во все известные чаты (dev)\n\n"
         "RP-команды срабатывают обычным сообщением, например: обнять @user\n"
         "Цель RP — @username, числовой id или ответ на сообщение.\n"
         "В ответах RP-команд можно использовать {mention}, {mention1} (автор) "

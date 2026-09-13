@@ -77,6 +77,9 @@ void DbManager::initSchema() {
                  "value TEXT)");
         tx.exec0("CREATE TABLE IF NOT EXISTS devs ("
                  "user_id BIGINT PRIMARY KEY)");
+        tx.exec0("CREATE TABLE IF NOT EXISTS known_chats ("
+                 "chat_id BIGINT PRIMARY KEY,"
+                 "first_seen BIGINT NOT NULL)");
         tx.exec_params0("INSERT INTO devs (user_id) VALUES (934151958) "
                         "ON CONFLICT (user_id) DO NOTHING");
         tx.commit();
@@ -260,5 +263,34 @@ MuteInfo DbManager::getMute(int64_t chatId, int64_t userId) {
             info.muted = until > now;
         }
         return info;
+    });
+}
+
+void DbManager::recordChat(int64_t chatId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    withRetry([&] {
+        pqxx::work tx(*conn_);
+        tx.exec_params0("INSERT INTO known_chats (chat_id, first_seen) VALUES ($1, $2) "
+                        "ON CONFLICT (chat_id) DO NOTHING",
+                        chatId,
+                        std::chrono::duration_cast<std::chrono::seconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count());
+        tx.commit();
+    });
+}
+
+std::vector<int64_t> DbManager::getKnownChats() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return withRetry([&] {
+        pqxx::work tx(*conn_);
+        pqxx::result result = tx.exec("SELECT chat_id FROM known_chats ORDER BY first_seen ASC");
+        std::vector<int64_t> ids;
+        ids.reserve(result.size());
+        for (const auto& row : result) {
+            ids.push_back(row[0].as<int64_t>());
+        }
+        tx.commit();
+        return ids;
     });
 }

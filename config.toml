@@ -28,6 +28,7 @@ unban = 1
 globalban = 0
 globalunban = 0
 devc = 0
+gnotify = 0
 # /rank is owner-only (a single rank level for all rank changes)
 rank = 1
 ranks = 4

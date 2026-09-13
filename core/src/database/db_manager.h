@@ -58,6 +58,12 @@ public:
     bool isMuted(int64_t chatId, int64_t userId);
     MuteInfo getMute(int64_t chatId, int64_t userId);
 
+    // Records a chat the bot has interacted with (channels, groups, DMs) so
+    // /gnotify can reach every known chat. Idempotent.
+    void recordChat(int64_t chatId);
+    // All chat ids recorded so far.
+    std::vector<int64_t> getKnownChats();
+
 private:
     explicit DbManager(DbConfig config);
 
